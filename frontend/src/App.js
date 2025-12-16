@@ -27,6 +27,10 @@ function App() {
     mean_smoothness: ''
   });
   const [predictionResult, setPredictionResult] = useState(null);
+  const [infoModalOpen, setInfoModalOpen] = useState(false);
+  const [infoData, setInfoData] = useState(null);
+  const [infoLoading, setInfoLoading] = useState(false);
+  const [infoError, setInfoError] = useState(null);
 
   const handleFileChange = (e) => {
     setFile(e.target.files[0]);
@@ -55,6 +59,8 @@ function App() {
         setGridTitle('');
         setScatterPlotImage('');
         setHtmlContent('');
+        setInfoData(null);
+        setInfoError(null);
       } else {
         alert(`Error: ${data.error}`);
       }
@@ -80,6 +86,10 @@ function App() {
   const closePredictModal = () => {
     setPredictModalOpen(false);
     setPredictionResult(null);
+  };
+  const closeInfoModal = () => {
+    setInfoModalOpen(false);
+    setInfoLoading(false);
   };
 
   const fetchHead = async () => {
@@ -149,6 +159,26 @@ function App() {
     } catch (error) {
       console.error('Error fetching null values:', error);
       alert('An error occurred while fetching null values.');
+    }
+  };
+
+  const fetchDataframeInfo = async () => {
+    setInfoModalOpen(true);
+    setInfoLoading(true);
+    setInfoError(null);
+    try {
+      const response = await fetch('http://localhost:5000/dataframe-info');
+      const data = await response.json();
+      if (response.ok) {
+        setInfoData(data);
+      } else {
+        setInfoError(data.error || 'Failed to fetch dataframe info.');
+      }
+    } catch (error) {
+      console.error('Error fetching dataframe info:', error);
+      setInfoError('An error occurred while fetching dataframe info.');
+    } finally {
+      setInfoLoading(false);
     }
   };
 
@@ -340,6 +370,7 @@ function App() {
         <button onClick={fetchDescribe} disabled={columns.length === 0}>Describe</button>
         <button onClick={openGroupByModal} disabled={columns.length === 0}>Group By</button>
         <button onClick={fetchNullValues} disabled={columns.length === 0}>Valores Nulos</button>
+        <button onClick={fetchDataframeInfo} disabled={columns.length === 0}>Dataframe Info</button>
         <button onClick={openBoxplotModal} disabled={columns.length === 0}>Boxplot</button>
         <button onClick={openHistogramModal} disabled={columns.length === 0}>Histogram</button>
         <button onClick={openScatterPlotModal} disabled={columns.length === 0}>Scatter Plot</button>
@@ -587,6 +618,62 @@ function App() {
               <div>
                 <h3>Prediction Result:</h3>
                 <p>{predictionResult === 0 ? "No Cancer (0)" : "Cancer (1)"}</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {infoModalOpen && (
+        <div className="modal">
+          <div className="modal-content">
+            <span className="close" onClick={closeInfoModal}>&times;</span>
+            <h2>Dataframe Info</h2>
+            {infoLoading && <div>Loading info...</div>}
+            {infoError && <div style={{ color: 'red' }}>{infoError}</div>}
+            {infoData && !infoLoading && !infoError && (
+              <div className="info-content">
+                <table className="grid">
+                  <thead>
+                    <tr>
+                      <th>Key</th>
+                      <th>Value</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr><td>Rows</td><td>{infoData.rows}</td></tr>
+                    <tr><td>Columns</td><td>{infoData.columns}</td></tr>
+                    <tr><td>Index</td><td>{infoData.index}</td></tr>
+                    <tr><td>Memory Usage (bytes)</td><td>{infoData.memoryUsageBytes}</td></tr>
+                  </tbody>
+                </table>
+
+                <h4>Columns overview</h4>
+                <div className="table-container" style={{ maxHeight: 260, overflow: 'auto' }}>
+                  <table className="grid">
+                    <thead>
+                      <tr>
+                        <th>Column</th>
+                        <th>Non-null</th>
+                        <th>Dtype</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {Object.keys(infoData.dtypes || {}).map((col) => (
+                        <tr key={col}>
+                          <td>{col}</td>
+                          <td>{infoData.nonNull ? infoData.nonNull[col] : '-'}</td>
+                          <td>{infoData.dtypes[col]}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                <h4>Raw info()</h4>
+                <pre style={{ whiteSpace: 'pre-wrap', maxHeight: 180, overflow: 'auto' }}>
+{infoData.infoText}
+                </pre>
               </div>
             )}
           </div>

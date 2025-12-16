@@ -22,6 +22,30 @@ CORS(app)
 # Store dataframe in memory
 df = None
 
+def _build_dataframe_info(target_df: pd.DataFrame) -> dict:
+    """
+    Assemble a structured payload similar to pandas.DataFrame.info().
+    This avoids string parsing on the frontend while keeping the info concise.
+    """
+    buffer = io.StringIO()
+    target_df.info(buf=buffer)
+    info_text = buffer.getvalue()
+    buffer.close()
+
+    non_null_counts = target_df.notnull().sum().to_dict()
+    dtypes = {col: str(dtype) for col, dtype in target_df.dtypes.items()}
+    memory_usage_bytes = target_df.memory_usage(deep=True).sum()
+
+    return {
+        'rows': int(target_df.shape[0]),
+        'columns': int(target_df.shape[1]),
+        'index': str(target_df.index),
+        'nonNull': non_null_counts,
+        'dtypes': dtypes,
+        'memoryUsageBytes': int(memory_usage_bytes),
+        'infoText': info_text
+    }
+
 @app.route('/upload', methods=['POST'])
 def upload_file():
     global df
@@ -45,6 +69,18 @@ def get_head():
         return jsonify({'error': 'No dataframe loaded'}), 400
     return jsonify(df.head(100).to_dict(orient='records')), 200
 
+@app.route('/dataframe-info', methods=['GET'])
+def get_dataframe_info():
+    if df is None:
+        return jsonify({'error': 'No dataframe loaded'}), 400
+
+    try:
+        metadata = _build_dataframe_info(df)
+        return jsonify(metadata), 200
+    except Exception as e:
+        # TODO: add structured logging once logging stack is defined.
+        return jsonify({'error': f'Failed to collect dataframe info: {str(e)}'}), 500
+
 @app.route('/describe', methods=['GET'])
 def get_describe():
     if df is None:
@@ -56,9 +92,9 @@ def get_null_values():
     if df is None:
         return jsonify({'error': 'No dataframe loaded'}), 400
     
-    missing_values = ["Missing", "missing", "MISSING"]
+    missing_values = ["Missing", "missing", "MISSING", "?"]
     df_temp = df.replace(missing_values, pd.NA)
-    
+        
     null_counts = df_temp.isnull().sum()
     
     total = null_counts.to_dict()
