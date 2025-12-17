@@ -56,6 +56,14 @@
   text-align: center;
 }
 
+.modal-actions {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 15px;
+  flex-wrap: wrap;
+}
+
 .close {
   color: #aaa;
   float: right;

@@ -31,6 +31,9 @@ function App() {
   const [infoData, setInfoData] = useState(null);
   const [infoLoading, setInfoLoading] = useState(false);
   const [infoError, setInfoError] = useState(null);
+  const [fixModalOpen, setFixModalOpen] = useState(false);
+  const [fixingDataset, setFixingDataset] = useState(false);
+  const [fixMessage, setFixMessage] = useState('');
 
   const handleFileChange = (e) => {
     setFile(e.target.files[0]);
@@ -181,6 +184,65 @@ function App() {
       setInfoLoading(false);
     }
   };
+
+  const handleFixDataset = async () => {
+    if (columns.length === 0) {
+      alert("Please upload a dataset first.");
+      return;
+    }
+    setFixingDataset(true);
+    try {
+      const response = await fetch('http://localhost:5000/fix-dataset', { method: 'POST' });
+      const data = await response.json();
+      if (response.ok) {
+        setColumns(data.columns || columns);
+        setFixMessage(data.message || 'Dataset fixed successfully.');
+        setFixModalOpen(true);
+        setGridData([]);
+        setGridTitle('');
+        setScatterPlotImage('');
+        setBoxplotImage('');
+        setHistogramImage('');
+        setHtmlContent('');
+        if (data.info) {
+          setInfoData(data.info);
+        }
+      } else {
+        alert(`Error: ${data.error || 'Failed to fix dataset.'}`);
+      }
+    } catch (error) {
+      console.error('Error fixing dataset:', error);
+      alert('An error occurred while fixing the dataset.');
+    } finally {
+      setFixingDataset(false);
+    }
+  };
+
+  const handleDownloadFixedDataset = async () => {
+    try {
+      const response = await fetch('http://localhost:5000/download-fixed-dataset');
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        alert(`Error: ${errorData.error || 'Failed to download fixed dataset.'}`);
+        return;
+      }
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'fixed_dataset.csv';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      setFixModalOpen(false);
+    } catch (error) {
+      console.error('Error downloading fixed dataset:', error);
+      alert('An error occurred while downloading the fixed dataset.');
+    }
+  };
+
+  const closeFixModal = () => setFixModalOpen(false);
 
   const handleGroupBySubmit = async (e) => {
     e.preventDefault();
@@ -371,6 +433,9 @@ function App() {
         <button onClick={openGroupByModal} disabled={columns.length === 0}>Group By</button>
         <button onClick={fetchNullValues} disabled={columns.length === 0}>Valores Nulos</button>
         <button onClick={fetchDataframeInfo} disabled={columns.length === 0}>Dataframe Info</button>
+        <button onClick={handleFixDataset} disabled={columns.length === 0 || fixingDataset}>
+          {fixingDataset ? 'Fixing...' : 'Fix dataset'}
+        </button>
         <button onClick={openBoxplotModal} disabled={columns.length === 0}>Boxplot</button>
         <button onClick={openHistogramModal} disabled={columns.length === 0}>Histogram</button>
         <button onClick={openScatterPlotModal} disabled={columns.length === 0}>Scatter Plot</button>
@@ -620,6 +685,20 @@ function App() {
                 <p>{predictionResult === 0 ? "No Cancer (0)" : "Cancer (1)"}</p>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {fixModalOpen && (
+        <div className="modal">
+          <div className="modal-content">
+            <span className="close" onClick={closeFixModal}>&times;</span>
+            <h2>Dataset corrigido</h2>
+            <p>{fixMessage || 'Dataset corrigido. Deseja salvar o novo arquivo?'}</p>
+            <div className="modal-actions">
+              <button onClick={handleDownloadFixedDataset}>Salvar novo dataset</button>
+              <button onClick={closeFixModal}>Fechar</button>
+            </div>
           </div>
         </div>
       )}

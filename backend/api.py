@@ -1,5 +1,6 @@
 import os
-from flask import Flask, request, jsonify
+import json
+from flask import Flask, request, jsonify, Response
 from flask_cors import CORS
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -21,6 +22,7 @@ CORS(app)
 
 # Store dataframe in memory
 df = None
+MISSING_VALUE_TOKENS = ["Missing", "missing", "MISSING", "?"]
 
 def _build_dataframe_info(target_df: pd.DataFrame) -> dict:
     """
@@ -85,21 +87,85 @@ def get_dataframe_info():
 def get_describe():
     if df is None:
         return jsonify({'error': 'No dataframe loaded'}), 400
-    return jsonify(df.describe().to_dict()), 200
+    try:
+        # Work on a copy so we can coerce numeric-looking object columns and handle custom missing tokens
+        describe_df = df.copy()
+        describe_df = describe_df.replace(MISSING_VALUE_TOKENS, pd.NA)
+
+        # Convert object columns to numeric when the majority of their non-null values are numeric
+        for col in describe_df.select_dtypes(include=['object']).columns:
+            numeric_col = pd.to_numeric(describe_df[col], errors='coerce')
+            original_non_na = describe_df[col].notna().sum()
+            converted_non_na = numeric_col.notna().sum()
+            if original_non_na > 0 and converted_non_na >= 0.9 * original_non_na:
+                describe_df[col] = numeric_col
+
+        # Include all columns (numeric and categorical) in describe
+        # Convert to JSON-safe primitives to avoid NaN/Timestamp serialization issues
+        describe_result = describe_df.describe(include='all')
+        safe_describe = json.loads(describe_result.to_json(date_format='iso'))
+        return jsonify(safe_describe), 200
+    except Exception as e:
+        return jsonify({'error': f'Failed to compute describe: {str(e)}'}), 500
 
 @app.route('/null-values', methods=['GET'])
 def get_null_values():
     if df is None:
         return jsonify({'error': 'No dataframe loaded'}), 400
     
-    missing_values = ["Missing", "missing", "MISSING", "?"]
-    df_temp = df.replace(missing_values, pd.NA)
+    df_temp = df.replace(MISSING_VALUE_TOKENS, pd.NA)
         
     null_counts = df_temp.isnull().sum()
     
     total = null_counts.to_dict()
 
     return jsonify(total), 200
+
+@app.route('/fix-dataset', methods=['POST'])
+def fix_dataset():
+    """
+    Normalize dataset by replacing known missing tokens and coercing object columns to Int64.
+    """
+    global df
+    if df is None:
+        return jsonify({'error': 'No dataframe loaded'}), 400
+
+    try:
+        fixed_df = df.copy()
+        fixed_df = fixed_df.replace(MISSING_VALUE_TOKENS, pd.NA)
+
+        # Force object columns into integer form (nullable) after coercing/rounding numerics
+        for col in fixed_df.select_dtypes(include=['object']).columns:
+            numeric_col = pd.to_numeric(fixed_df[col], errors='coerce')
+            numeric_col = numeric_col.apply(lambda v: pd.NA if pd.isna(v) else int(round(v)))
+            fixed_df[col] = pd.array(numeric_col, dtype='Int64')
+
+        df = fixed_df
+        metadata = _build_dataframe_info(df)
+
+        return jsonify({
+            'message': 'Dataset cleaned. Missing tokens replaced and object columns cast to Int64.',
+            'columns': list(df.columns),
+            'dtypes': metadata.get('dtypes'),
+            'rows': metadata.get('rows')
+        }), 200
+    except Exception as e:
+        return jsonify({'error': f'Failed to fix dataset: {str(e)}'}), 500
+
+@app.route('/download-fixed-dataset', methods=['GET'])
+def download_fixed_dataset():
+    if df is None:
+        return jsonify({'error': 'No dataframe loaded'}), 400
+
+    csv_buffer = io.StringIO()
+    df.to_csv(csv_buffer, index=False)
+    csv_buffer.seek(0)
+
+    return Response(
+        csv_buffer.getvalue(),
+        mimetype='text/csv',
+        headers={'Content-Disposition': 'attachment; filename=fixed_dataset.csv'}
+    )
 
 @app.route('/groupby', methods=['GET'])
 def get_groupby():
@@ -114,7 +180,9 @@ def get_groupby():
         grouped_describe = df.groupby(column).describe()
         # Convert tuple columns to string to avoid JSON error
         grouped_describe.columns = ['_'.join(col).strip() for col in grouped_describe.columns.values]
-        return jsonify(grouped_describe.to_dict(orient='index')), 200
+        # Use to_json/loads to coerce NaN/NaT into JSON-safe nulls
+        safe_grouped = json.loads(grouped_describe.to_json(orient='index'))
+        return jsonify(safe_grouped), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
