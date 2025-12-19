@@ -1,5 +1,6 @@
 import os
 import json
+import re
 from flask import Flask, request, jsonify, Response
 from flask_cors import CORS
 import pandas as pd
@@ -167,6 +168,43 @@ def download_fixed_dataset():
         headers={'Content-Disposition': 'attachment; filename=fixed_dataset.csv'}
     )
 
+@app.route('/download-reduced-dataset', methods=['GET'])
+def download_reduced_dataset():
+    """
+    Return a CSV without selected columns (does not mutate the in-memory dataframe).
+    """
+    if df is None:
+        return jsonify({'error': 'No dataframe loaded'}), 400
+
+    filename = request.args.get('filename', 'dataset_reduced.csv')
+    # Keep filename safe for header usage
+    safe_filename = re.sub(r'[^A-Za-z0-9._-]', '_', filename) or 'dataset_reduced.csv'
+    if not safe_filename.lower().endswith('.csv'):
+        safe_filename += '.csv'
+
+    drop_columns = [
+        'Biopsy',
+        'Cytology',  # keep spelling variant
+        'Citology',  # dataset original spelling
+        'Dx',
+        'IUD (years)',
+        'IUD: years',
+        'STDs'
+    ]
+
+    try:
+        reduced_df = df.drop(columns=drop_columns, errors='ignore')
+        csv_buffer = io.StringIO()
+        reduced_df.to_csv(csv_buffer, index=False)
+        csv_buffer.seek(0)
+        return Response(
+            csv_buffer.getvalue(),
+            mimetype='text/csv',
+            headers={'Content-Disposition': f'attachment; filename={safe_filename}'}
+        )
+    except Exception as e:
+        return jsonify({'error': f'Failed to generate reduced dataset: {str(e)}'}), 500
+
 @app.route('/groupby', methods=['GET'])
 def get_groupby():
     if df is None:
@@ -318,9 +356,21 @@ def get_traintest():
         return jsonify({'error': 'No dataframe loaded'}), 400
     
     n_neighbors = request.args.get('n_neighbors', default=3, type=int)
-
-    x = df[["mean_radius", "mean_area", "mean_perimeter", "mean_texture", "mean_smoothness"]]
-    y = df["diagnosis"]
+    
+    x = df[["Age", "Dx:CIN", "Dx:Cancer", "Dx:HPV", "First sexual intercourse", 
+            "Hinselmann", "Hormonal Contraceptives", 
+            "Hormonal Contraceptives (years)", "Num of pregnancies",
+            "Number of sexual partners", "STDs (number)",
+            "STDs: Number of diagnosis", "STDs: Time since first diagnosis",
+            "STDs: Time since last diagnosis", "STDs:HIV", "STDs:HPV",
+            "STDs:Hepatitis B", "STDs:cervical condylomatosis",
+            "STDs:condylomatosis", "STDs:genital herpes",
+            "STDs:molluscum contagiosum", "STDs:pelvic inflammatory disease",
+            "STDs:syphilis", "STDs:vaginal condylomatosis",
+            "STDs:vulvo-perineal condylomatosis", "Schiller",
+            "Smokes", "Smokes (packs/year)", "Smokes (years)"]]	
+    
+    y = df["IUD"]
     
     x_train, x_test, y_train, y_test = train_test_split(x,
                                                         y,
@@ -338,7 +388,7 @@ def get_traintest():
     train_size = len(x_train)
     test_size = len(x_test)
     
-    diagnosis_counts = df['diagnosis'].value_counts()
+    diagnosis_counts = df['IUD'].value_counts()
     diag_0_count = diagnosis_counts.get(0, 0)
     diag_1_count = diagnosis_counts.get(1, 0)
 

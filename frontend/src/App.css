@@ -122,30 +122,6 @@ button {
   cursor: pointer;
 }
 
-.scatter-plot-options {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  margin-top: 20px;
-}
-
-.scatter-plot-options button {
-  background-color: #61dafb;
-  color: #282c34;
-  border: none;
-  padding: 12px 25px;
-  border-radius: 5px;
-  font-size: 16px;
-  font-weight: bold;
-  cursor: pointer;
-  transition: background-color 0.3s ease;
-  width: 100%;
-}
-
-.scatter-plot-options button:hover {
-  background-color: #21a1f1;
-}
-
 .table-container {
   overflow-x: scroll;
   width: 100%;

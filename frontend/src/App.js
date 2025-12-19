@@ -273,30 +273,6 @@ function App() {
     }
   };
 
-  const handleScatterPlotSubmit = async (plotSelection) => {
-    if (!plotSelection) {
-      alert("Please select a plot.");
-      return;
-    }
-    const [x_col, y_col] = plotSelection.split('_vs_');
-    try {
-      const response = await fetch(`http://localhost:5000/scatterplot?x_col=${x_col}&y_col=${y_col}`);
-      const data = await response.json();
-      if (response.ok) {
-        setScatterPlotImage(`data:image/png;base64,${data.image}`);
-        setGridData([]);
-        setGridTitle('');
-        setHtmlContent('');
-        closeScatterPlotModal();
-      } else {
-        alert(`Error: ${data.error}`);
-      }
-    } catch (error) {
-      console.error('Error fetching scatter plot data:', error);
-      alert('An error occurred while fetching the scatter plot data.');
-    }
-  };
- 
   const handleBoxplotSubmit = async (column) => {
     if (!column) {
       alert("Please select a column.");
@@ -320,8 +296,8 @@ function App() {
       alert('An error occurred while fetching the boxplot data.');
     }
   };
- 
-   const handleHistogramSubmit = async (column) => {
+
+  const handleHistogramSubmit = async (column) => {
     if (!column) {
       alert("Please select a column.");
       return;
@@ -346,9 +322,38 @@ function App() {
     }
   };
 
-   const handleScatterPlot3dSubmit = async () => {
-     try {
-       const response = await fetch(`http://localhost:5000/scatterplot3d?x_col=mean_area&y_col=mean_perimeter&z_col=mean_radius`);
+  const handleScatterPlotSubmit = async (xCol, yCol) => {
+    if (!xCol || !yCol) {
+      alert("Please select both x and y columns.");
+      return;
+    }
+    if (!columns.includes(xCol) || !columns.includes(yCol)) {
+      alert("The selected columns are not available in the dataset.");
+      return;
+    }
+    try {
+      const response = await fetch(`http://localhost:5000/scatterplot?x_col=${encodeURIComponent(xCol)}&y_col=${encodeURIComponent(yCol)}`);
+      const data = await response.json();
+      if (response.ok) {
+        setScatterPlotImage(`data:image/png;base64,${data.image}`);
+        setGridData([]);
+        setGridTitle('');
+        setHtmlContent('');
+        setBoxplotImage('');
+        setHistogramImage('');
+        closeScatterPlotModal();
+      } else {
+        alert(`Error: ${data.error}`);
+      }
+    } catch (error) {
+      console.error('Error fetching scatter plot data:', error);
+      alert('An error occurred while fetching the scatter plot data.');
+    }
+  };
+
+  const handleScatterPlot3dSubmit = async () => {
+    try {
+      const response = await fetch(`http://localhost:5000/scatterplot3d?x_col=mean_area&y_col=mean_perimeter&z_col=mean_radius`);
       const data = await response.json();
       if (response.ok) {
         setScatterPlotImage(`data:image/png;base64,${data.image}`);
@@ -423,6 +428,41 @@ function App() {
     }
   };
 
+  const handleDownloadReducedDataset = async () => {
+    if (columns.length === 0) {
+      alert("Please upload a dataset first.");
+      return;
+    }
+    const defaultName = 'dataset_reduced.csv';
+    const fileName = window.prompt('Digite o nome do arquivo para salvar (sugerido: dataset_reduced.csv):', defaultName);
+    if (fileName === null) {
+      return;
+    }
+    const trimmed = fileName.trim() || defaultName;
+    const finalName = trimmed.toLowerCase().endsWith('.csv') ? trimmed : `${trimmed}.csv`;
+
+    try {
+      const response = await fetch(`http://localhost:5000/download-reduced-dataset?filename=${encodeURIComponent(finalName)}`);
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        alert(`Error: ${errorData.error || 'Failed to download reduced dataset.'}`);
+        return;
+      }
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = finalName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Error downloading reduced dataset:', error);
+      alert('An error occurred while downloading the reduced dataset.');
+    }
+  };
+
   return (
     <div className="App">
       <div className="sidebar">
@@ -436,6 +476,7 @@ function App() {
         <button onClick={handleFixDataset} disabled={columns.length === 0 || fixingDataset}>
           {fixingDataset ? 'Fixing...' : 'Fix dataset'}
         </button>
+        <button onClick={handleDownloadReducedDataset} disabled={columns.length === 0}>Salvar reduzido</button>
         <button onClick={openBoxplotModal} disabled={columns.length === 0}>Boxplot</button>
         <button onClick={openHistogramModal} disabled={columns.length === 0}>Histogram</button>
         <button onClick={openScatterPlotModal} disabled={columns.length === 0}>Scatter Plot</button>
@@ -524,42 +565,115 @@ function App() {
 
       {scatterPlotModalOpen && (
         <div className="modal">
-            <div className="modal-content">
-                <span className="close" onClick={closeScatterPlotModal}>&times;</span>
-                <h2>Select Scatter Plot</h2>
-                <div className="scatter-plot-options">
-                    <button onClick={() => handleScatterPlotSubmit('mean_area_vs_mean_perimeter')}>
-                        mean_area vs mean_perimeter
-                    </button>
-                    <button onClick={() => handleScatterPlotSubmit('mean_area_vs_mean_radius')}>
-                        mean_area vs mean_radius
-                    </button>
-                    <button onClick={() => handleScatterPlotSubmit('mean_perimeter_vs_mean_radius')}>
-                        mean_perimeter vs mean_radius
-                    </button>
-                    <button onClick={() => handleScatterPlotSubmit('mean_area_vs_mean_texture')}>
-                        mean_area vs mean_texture
-                    </button>
-                    <button onClick={() => handleScatterPlotSubmit('mean_area_vs_mean_smoothness')}>
-                        mean_area vs mean_smoothness
-                    </button>
-                    <button onClick={() => handleScatterPlotSubmit('mean_perimeter_vs_mean_texture')}>
-                        mean_perimeter vs mean_texture
-                    </button>
-                    <button onClick={() => handleScatterPlotSubmit('mean_perimeter_vs_mean_smoothness')}>
-                        mean_perimeter vs mean_smoothness
-                    </button>
-                    <button onClick={() => handleScatterPlotSubmit('mean_radius_vs_mean_texture')}>
-                        mean_radius vs mean_texture
-                    </button>
-                    <button onClick={() => handleScatterPlotSubmit('mean_radius_vs_mean_smoothness')}>
-                        mean_radius vs mean_smoothness
-                    </button>
-                    <button onClick={() => handleScatterPlotSubmit('mean_smoothness_vs_mean_texture')}>
-                        mean_smoothness vs mean_texture
-                    </button>
-                </div>
+          <div className="modal-content">
+            <span className="close" onClick={closeScatterPlotModal}>&times;</span>
+            <h2>Scatter Plot</h2>
+            <p>Selecione um par de colunas para gerar o grafico:</p>
+            <div className="scatter-options">
+              <button
+                onClick={() => handleScatterPlotSubmit('Age', 'IUD')}
+                disabled={!columns.includes('Age') || !columns.includes('IUD')}
+              >
+                Age vs IUD
+              </button>
+              <button
+                onClick={() => handleScatterPlotSubmit('First sexual intercourse', 'IUD')}
+                disabled={
+                  !columns.includes('First sexual intercourse') || !columns.includes('IUD')
+                }
+              >
+                First sexual intercourse vs IUD
+              </button>
+              <button
+                onClick={() => handleScatterPlotSubmit('Hormonal Contraceptives (years)', 'IUD')}
+                disabled={
+                  !columns.includes('Hormonal Contraceptives (years)') || !columns.includes('IUD')
+                }
+              >
+                Hormonal Contraceptives (years) vs IUD
+              </button>
+              <button
+                onClick={() => handleScatterPlotSubmit('Num of pregnancies', 'IUD')}
+                disabled={
+                  !columns.includes('Num of pregnancies') || !columns.includes('IUD')
+                }
+              >
+                Num of pregnancies vs IUD
+              </button>
+              <button
+                onClick={() => handleScatterPlotSubmit('Number of sexual partners', 'IUD')}
+                disabled={
+                  !columns.includes('Number of sexual partners') || !columns.includes('IUD')
+                }
+              >
+                Number of sexual partners vs IUD
+              </button>
+              <button
+                onClick={() => handleScatterPlotSubmit('STDs (number)', 'IUD')}
+                disabled={
+                  !columns.includes('STDs (number)') || !columns.includes('IUD')
+                }
+              >
+                STDs (number) vs IUD
+              </button>
+              <button
+                onClick={() => handleScatterPlotSubmit('STDs: Number of diagnosis', 'IUD')}
+                disabled={
+                  !columns.includes('STDs: Number of diagnosis') || !columns.includes('IUD')
+                }
+              >
+                STDs: Number of diagnosis vs IUD
+              </button>
+              <button
+                onClick={() => handleScatterPlotSubmit('STDs: Time since first diagnosis', 'IUD')}
+                disabled={
+                  !columns.includes('STDs: Time since first diagnosis') || !columns.includes('IUD')
+                }
+              >
+                STDs: Time since first diagnosis vs IUD
+              </button>
+              <button
+                onClick={() => handleScatterPlotSubmit('STDs: Time since last diagnosis', 'IUD')}
+                disabled={
+                  !columns.includes('STDs: Time since last diagnosis') || !columns.includes('IUD')
+                }
+              >
+                STDs: Time since last diagnosis vs IUD
+              </button>
+              <button
+                onClick={() => handleScatterPlotSubmit('Smokes (packs/year)', 'IUD')}
+                disabled={
+                  !columns.includes('Smokes (packs/year)') || !columns.includes('IUD')
+                }
+              >
+                Smokes (packs/year) vs IUD
+              </button>
+              <button
+                onClick={() => handleScatterPlotSubmit('Smokes (years)', 'IUD')}
+                disabled={
+                  !columns.includes('Smokes (years)') || !columns.includes('IUD')
+                }
+              >
+                Smokes (years) vs IUD
+              </button>
+              {(!columns.includes('Age') ||
+                !columns.includes('IUD') ||
+                !columns.includes('First sexual intercourse') ||
+                !columns.includes('Hormonal Contraceptives (years)') ||
+                !columns.includes('Num of pregnancies') ||
+                !columns.includes('Number of sexual partners') ||
+                !columns.includes('STDs (number)') ||
+                !columns.includes('STDs: Number of diagnosis') ||
+                !columns.includes('STDs: Time since first diagnosis') ||
+                !columns.includes('STDs: Time since last diagnosis') ||
+                !columns.includes('Smokes (packs/year)') ||
+                !columns.includes('Smokes (years)')) && (
+                <p style={{ marginTop: 10 }}>
+                  Carregue um dataset com as colunas Age, First sexual intercourse, Hormonal Contraceptives (years), Num of pregnancies, Number of sexual partners, STDs (number), STDs: Number of diagnosis, STDs: Time since first diagnosis, STDs: Time since last diagnosis, Smokes (packs/year), Smokes (years) e IUD.
+                </p>
+              )}
             </div>
+          </div>
         </div>
       )}
 
