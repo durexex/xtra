@@ -1,0 +1,23 @@
+.radio-group {
+  display: flex;
+  flex-direction: column;
+  margin: 20px 0;
+}
+
+.radio-label {
+  display: block;
+  padding: 10px 15px;
+  margin-bottom: 5px;
+  background-color: #f2f2f2;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.3s;
+}
+
+.radio-label:hover {
+  background-color: #ddd;
+}
+
+.radio-input {
+  margin-right: 10px;
+}

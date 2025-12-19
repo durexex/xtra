@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import './App.css';
+import Modal from './components/Modal';
+import RadioGroup from './components/RadioGroup';
 
 function App() {
   const [file, setFile] = useState(null);
@@ -13,20 +15,21 @@ function App() {
   const [boxplotModalOpen, setBoxplotModalOpen] = useState(false);
   const [histogramModalOpen, setHistogramModalOpen] = useState(false);
   const [selectedColumn, setSelectedColumn] = useState('');
+  const [scatterX, setScatterX] = useState('');
+  const [scatterY, setScatterY] = useState('');
   const [scatterPlotImage, setScatterPlotImage] = useState('');
   const [boxplotImage, setBoxplotImage] = useState('');
   const [histogramImage, setHistogramImage] = useState('');
   const [knnModalOpen, setKnnModalOpen] = useState(false);
   const [nNeighbors, setNNeighbors] = useState(3);
-  const [predictModalOpen, setPredictModalOpen] = useState(false);
-  const [predictData, setPredictData] = useState({
-    mean_radius: '',
-    mean_area: '',
-    mean_perimeter: '',
-    mean_texture: '',
-    mean_smoothness: ''
-  });
-  const [predictionResult, setPredictionResult] = useState(null);
+  const [knnY, setKnnY] = useState('');
+  const [predictAlso, setPredictAlso] = useState(false);
+  const [predictValues, setPredictValues] = useState({});
+  const [nullValuesModalOpen, setNullValuesModalOpen] = useState(false);
+  const [customNullValues, setCustomNullValues] = useState([]);
+  const [currentCustomNullValue, setCurrentCustomNullValue] = useState('');
+  const [selectedColumnsForNullCheck, setSelectedColumnsForNullCheck] = useState({});
+
   const [infoModalOpen, setInfoModalOpen] = useState(false);
   const [infoData, setInfoData] = useState(null);
   const [infoLoading, setInfoLoading] = useState(false);
@@ -83,13 +86,11 @@ function App() {
   const closeBoxplotModal = () => setBoxplotModalOpen(false);
   const openHistogramModal = () => setHistogramModalOpen(true);
   const closeHistogramModal = () => setHistogramModalOpen(false);
-  const openKnnModal = () => setKnnModalOpen(true);
-  const closeKnnModal = () => setKnnModalOpen(false);
-  const openPredictModal = () => setPredictModalOpen(true);
-  const closePredictModal = () => {
-    setPredictModalOpen(false);
-    setPredictionResult(null);
+  const openKnnModal = () => {
+    setKnnModalOpen(true);
   };
+  const closeKnnModal = () => setKnnModalOpen(false);
+
   const closeInfoModal = () => {
     setInfoModalOpen(false);
     setInfoLoading(false);
@@ -143,9 +144,45 @@ function App() {
     }
   };
 
+  const openNullValuesModal = () => setNullValuesModalOpen(true);
+  const closeNullValuesModal = () => setNullValuesModalOpen(false);
+
+  const addCustomNullValue = () => {
+    if (currentCustomNullValue && !customNullValues.includes(currentCustomNullValue)) {
+      setCustomNullValues([...customNullValues, currentCustomNullValue]);
+      setCurrentCustomNullValue('');
+    }
+  };
+
+  const clearCustomNullValues = () => {
+    setCustomNullValues([]);
+  };
+
+  const handleCheckboxChange = (event) => {
+    const { name, checked } = event.target;
+    setSelectedColumnsForNullCheck(prevState => ({
+      ...prevState,
+      [name]: checked,
+    }));
+  };
+
+
   const fetchNullValues = async () => {
+    const selectedColumns = Object.keys(selectedColumnsForNullCheck).filter(col => selectedColumnsForNullCheck[col]);
+    
+    if (selectedColumns.length === 0) {
+      alert("Please select at least one column to check for null values.");
+      return;
+    }
+
     try {
-      const response = await fetch('http://localhost:5000/null-values');
+      const response = await fetch('http://localhost:5000/null-values', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ custom_null_values: customNullValues, columns_to_check: selectedColumns }),
+      });
       const data = await response.json();
       if (response.ok) {
         const transformedData = Object.keys(data).map(key => ({
@@ -156,6 +193,7 @@ function App() {
         setGridTitle('Valores Nulos por Coluna:');
         setScatterPlotImage('');
         setHtmlContent('');
+        closeNullValuesModal();
       } else {
         alert(`Error: ${data.error}`);
       }
@@ -164,6 +202,63 @@ function App() {
       alert('An error occurred while fetching null values.');
     }
   };
+
+  const handleFixNullValues = async () => {
+    const selectedColumns = Object.keys(selectedColumnsForNullCheck).filter(col => selectedColumnsForNullCheck[col]);
+    
+    if (selectedColumns.length === 0) {
+      alert("Please select at least one column to fix null values.");
+      return;
+    }
+
+    try {
+      const response = await fetch('http://localhost:5000/fix-nulls', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ custom_null_values: customNullValues, columns_to_fix: selectedColumns }),
+      });
+      const data = await response.json();
+      if (response.ok) {
+        alert(data.message);
+        closeNullValuesModal();
+        
+        // After fixing, prompt for download
+        const defaultName = 'fixed_dataset.csv';
+        const fileName = window.prompt('Enter the filename for the fixed dataset:', defaultName);
+        if (fileName) { // Proceed if user doesn't cancel the prompt
+            const trimmed = fileName.trim() || defaultName;
+            const finalName = trimmed.toLowerCase().endsWith('.csv') ? trimmed : `${trimmed}.csv`;
+
+            // Use the download endpoint from the response
+            const downloadResponse = await fetch(`http://localhost:5000${data.download_endpoint}?filename=${encodeURIComponent(finalName)}`);
+            
+            if (downloadResponse.ok) {
+                const blob = await downloadResponse.blob();
+                const url = window.URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = finalName;
+                document.body.appendChild(link);
+                link.click();
+                link.remove();
+                window.URL.revokeObjectURL(url);
+            } else {
+                const errorData = await downloadResponse.json().catch(() => ({}));
+                alert(`Error downloading file: ${errorData.error || 'Unknown error'}`);
+            }
+        }
+        fetchHead(); // Refresh the data grid
+      } else {
+        alert(`Error: ${data.error}`);
+      }
+    } catch (error) {
+      console.error('Error fixing null values:', error);
+      alert('An error occurred while fixing null values.');
+    }
+  };
+
 
   const fetchDataframeInfo = async () => {
     setInfoModalOpen(true);
@@ -370,63 +465,61 @@ function App() {
   };
 
 
-  const fetchTrainTest = async (n_neighbors) => {
-   try {
-     const response = await fetch(`http://localhost:5000/traintest?n_neighbors=${n_neighbors}`);
-     const data = await response.json();
-     if (response.ok) {
-       setHtmlContent(data.html);
-       setGridData([]);
-       setGridTitle('');
-       setScatterPlotImage('');
-     } else {
-       alert(`Error: ${data.error}`);
-     }
-   } catch (error) {
-     console.error('Error fetching KNN (test & train) data:', error);
-     alert('An error occurred while fetching the KNN (test & train) data.');
-   }
- };
-
-  const handleKnnSubmit = (e) => {
-    e.preventDefault();
-    fetchTrainTest(nNeighbors);
-    closeKnnModal();
-  };
-
-  const handlePredictChange = (e) => {
-    const { name, value } = e.target;
-    setPredictData(prevData => ({
-      ...prevData,
-      [name]: value
-    }));
-  };
-
-  const handlePredictSubmit = async (e) => {
-    e.preventDefault();
-    if (!predictData.mean_radius || !predictData.mean_area || !predictData.mean_perimeter || !predictData.mean_texture || !predictData.mean_smoothness) {
-      alert("Please fill in all fields.");
-      return;
-    }
+  const fetchTrainTest = async (n_neighbors, y_col, predict, predict_values) => {
     try {
-      const response = await fetch('http://localhost:5000/predict', {
+      let url = `http://localhost:5000/traintest?n_neighbors=${n_neighbors}&y_col=${y_col}&predict=${predict}`;
+      
+      const options = {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
+          'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ ...predictData, n_neighbors: nNeighbors }),
-      });
+        body: JSON.stringify({ predict_values: predict_values || {} })
+      };
+
+      const response = await fetch(url, options);
       const data = await response.json();
+      
       if (response.ok) {
-        setPredictionResult(data.prediction);
+        setHtmlContent(data.html);
+        setGridData([]);
+        setGridTitle('');
+        setScatterPlotImage('');
       } else {
         alert(`Error: ${data.error}`);
       }
     } catch (error) {
-      console.error('Error making prediction:', error);
-      alert('An error occurred while making the prediction.');
+      console.error('Error fetching KNN (test & train) data:', error);
+      alert('An error occurred while fetching the KNN (test & train) data.');
     }
   };
+
+  const handleKnnSubmit = (e) => {
+    e.preventDefault();
+    if (!knnY) {
+      alert("Please select a Y column.");
+      return;
+    }
+
+    if (predictAlso) {
+      const requiredColumns = columns.filter(c => c !== knnY);
+      const allFieldsFilled = requiredColumns.every(col => predictValues[col] && predictValues[col].trim() !== '');
+      
+      if (!allFieldsFilled) {
+        alert("Please fill in all prediction values.");
+        return;
+      }
+    }
+
+    fetchTrainTest(nNeighbors, knnY, predictAlso, predictValues);
+    closeKnnModal();
+  };
+
+  const handlePredictChange = (column, value) => {
+    setPredictValues(prev => ({ ...prev, [column]: value }));
+  };
+
+
 
   const handleDownloadReducedDataset = async () => {
     if (columns.length === 0) {
@@ -471,7 +564,7 @@ function App() {
         <button onClick={fetchHead} disabled={columns.length === 0}>Head</button>
         <button onClick={fetchDescribe} disabled={columns.length === 0}>Describe</button>
         <button onClick={openGroupByModal} disabled={columns.length === 0}>Group By</button>
-        <button onClick={fetchNullValues} disabled={columns.length === 0}>Valores Nulos</button>
+        <button onClick={openNullValuesModal} disabled={columns.length === 0}>Valores Nulos</button>
         <button onClick={fetchDataframeInfo} disabled={columns.length === 0}>Dataframe Info</button>
         <button onClick={handleFixDataset} disabled={columns.length === 0 || fixingDataset}>
           {fixingDataset ? 'Fixing...' : 'Fix dataset'}
@@ -480,9 +573,8 @@ function App() {
         <button onClick={openBoxplotModal} disabled={columns.length === 0}>Boxplot</button>
         <button onClick={openHistogramModal} disabled={columns.length === 0}>Histogram</button>
         <button onClick={openScatterPlotModal} disabled={columns.length === 0}>Scatter Plot</button>
-        <button onClick={handleScatterPlot3dSubmit} disabled={columns.length === 0}>3D Scatter Plot</button>
+        <button onClick={handleScatterPlot3dSubmit} disabled={true}>3D Scatter Plot</button>
         <button onClick={openKnnModal} disabled={columns.length === 0}>KNN (test & train)</button>
-        <button onClick={openPredictModal} disabled={columns.length === 0}>Predict</button>
       </div>
       <div className="content">
         <h1>Dashboard</h1>
@@ -563,151 +655,65 @@ function App() {
         </div>
       )}
 
-      {scatterPlotModalOpen && (
-        <div className="modal">
-          <div className="modal-content">
-            <span className="close" onClick={closeScatterPlotModal}>&times;</span>
-            <h2>Scatter Plot</h2>
-            <p>Selecione um par de colunas para gerar o grafico:</p>
-            <div className="scatter-options">
-              <button
-                onClick={() => handleScatterPlotSubmit('Age', 'IUD')}
-                disabled={!columns.includes('Age') || !columns.includes('IUD')}
-              >
-                Age vs IUD
-              </button>
-              <button
-                onClick={() => handleScatterPlotSubmit('First sexual intercourse', 'IUD')}
-                disabled={
-                  !columns.includes('First sexual intercourse') || !columns.includes('IUD')
-                }
-              >
-                First sexual intercourse vs IUD
-              </button>
-              <button
-                onClick={() => handleScatterPlotSubmit('Hormonal Contraceptives (years)', 'IUD')}
-                disabled={
-                  !columns.includes('Hormonal Contraceptives (years)') || !columns.includes('IUD')
-                }
-              >
-                Hormonal Contraceptives (years) vs IUD
-              </button>
-              <button
-                onClick={() => handleScatterPlotSubmit('Num of pregnancies', 'IUD')}
-                disabled={
-                  !columns.includes('Num of pregnancies') || !columns.includes('IUD')
-                }
-              >
-                Num of pregnancies vs IUD
-              </button>
-              <button
-                onClick={() => handleScatterPlotSubmit('Number of sexual partners', 'IUD')}
-                disabled={
-                  !columns.includes('Number of sexual partners') || !columns.includes('IUD')
-                }
-              >
-                Number of sexual partners vs IUD
-              </button>
-              <button
-                onClick={() => handleScatterPlotSubmit('STDs (number)', 'IUD')}
-                disabled={
-                  !columns.includes('STDs (number)') || !columns.includes('IUD')
-                }
-              >
-                STDs (number) vs IUD
-              </button>
-              <button
-                onClick={() => handleScatterPlotSubmit('STDs: Number of diagnosis', 'IUD')}
-                disabled={
-                  !columns.includes('STDs: Number of diagnosis') || !columns.includes('IUD')
-                }
-              >
-                STDs: Number of diagnosis vs IUD
-              </button>
-              <button
-                onClick={() => handleScatterPlotSubmit('STDs: Time since first diagnosis', 'IUD')}
-                disabled={
-                  !columns.includes('STDs: Time since first diagnosis') || !columns.includes('IUD')
-                }
-              >
-                STDs: Time since first diagnosis vs IUD
-              </button>
-              <button
-                onClick={() => handleScatterPlotSubmit('STDs: Time since last diagnosis', 'IUD')}
-                disabled={
-                  !columns.includes('STDs: Time since last diagnosis') || !columns.includes('IUD')
-                }
-              >
-                STDs: Time since last diagnosis vs IUD
-              </button>
-              <button
-                onClick={() => handleScatterPlotSubmit('Smokes (packs/year)', 'IUD')}
-                disabled={
-                  !columns.includes('Smokes (packs/year)') || !columns.includes('IUD')
-                }
-              >
-                Smokes (packs/year) vs IUD
-              </button>
-              <button
-                onClick={() => handleScatterPlotSubmit('Smokes (years)', 'IUD')}
-                disabled={
-                  !columns.includes('Smokes (years)') || !columns.includes('IUD')
-                }
-              >
-                Smokes (years) vs IUD
-              </button>
-              {(!columns.includes('Age') ||
-                !columns.includes('IUD') ||
-                !columns.includes('First sexual intercourse') ||
-                !columns.includes('Hormonal Contraceptives (years)') ||
-                !columns.includes('Num of pregnancies') ||
-                !columns.includes('Number of sexual partners') ||
-                !columns.includes('STDs (number)') ||
-                !columns.includes('STDs: Number of diagnosis') ||
-                !columns.includes('STDs: Time since first diagnosis') ||
-                !columns.includes('STDs: Time since last diagnosis') ||
-                !columns.includes('Smokes (packs/year)') ||
-                !columns.includes('Smokes (years)')) && (
-                <p style={{ marginTop: 10 }}>
-                  Carregue um dataset com as colunas Age, First sexual intercourse, Hormonal Contraceptives (years), Num of pregnancies, Number of sexual partners, STDs (number), STDs: Number of diagnosis, STDs: Time since first diagnosis, STDs: Time since last diagnosis, Smokes (packs/year), Smokes (years) e IUD.
-                </p>
-              )}
-            </div>
+      <Modal
+        isOpen={scatterPlotModalOpen}
+        onClose={closeScatterPlotModal}
+        title="Scatter Plot"
+      >
+        <form onSubmit={(e) => {
+          e.preventDefault();
+          handleScatterPlotSubmit(scatterX, scatterY);
+        }}>
+          <div className="form-group">
+            <label>Select X-axis:</label>
+            <select onChange={(e) => setScatterX(e.target.value)} value={scatterX} required>
+              <option value="">Select a column</option>
+              {columns.map((col, index) => (
+                <option key={index} value={col}>{col}</option>
+              ))}
+            </select>
           </div>
-        </div>
-      )}
+          <div className="form-group">
+            <label>Select Y-axis:</label>
+            <RadioGroup
+              options={columns}
+              selectedOption={scatterY}
+              onChange={setScatterY}
+            />
+          </div>
+          <button type="submit" disabled={!scatterX || !scatterY}>Generate Scatter Plot</button>
+        </form>
+      </Modal>
 
-      {boxplotModalOpen && (
-       <div className="modal">
-           <div className="modal-content">
-               <span className="close" onClick={closeBoxplotModal}>&times;</span>
-               <h2>Select Column for Boxplot</h2>
-               <div className="boxplot-options">
-                   {columns.map((col, index) => (
-                       <button key={index} onClick={() => handleBoxplotSubmit(col)}>
-                           {col}
-                       </button>
-                   ))}
-               </div>
-           </div>
-       </div>
-     )}
+      <Modal
+        isOpen={boxplotModalOpen}
+        onClose={closeBoxplotModal}
+        title="Select Column for Boxplot"
+      >
+        <RadioGroup
+          options={columns}
+          selectedOption={selectedColumn}
+          onChange={setSelectedColumn}
+        />
+        <button onClick={() => handleBoxplotSubmit(selectedColumn)} disabled={!selectedColumn}>
+          Generate Boxplot
+        </button>
+      </Modal>
 
-      {histogramModalOpen && (
-       <div className="modal">
-           <div className="modal-content">
-               <span className="close" onClick={closeHistogramModal}>&times;</span>
-               <h2>Select Column for Histogram</h2>
-               <div className="histogram-options">
-                   {columns.map((col, index) => (
-                       <button key={index} onClick={() => handleHistogramSubmit(col)}>
-                           {col}
-                       </button>
-                   ))}
-               </div>
-           </div>
-       </div>
-     )}
+      <Modal
+        isOpen={histogramModalOpen}
+        onClose={closeHistogramModal}
+        title="Select Column for Histogram"
+      >
+        <RadioGroup
+          options={columns}
+          selectedOption={selectedColumn}
+          onChange={setSelectedColumn}
+        />
+        <button onClick={() => handleHistogramSubmit(selectedColumn)} disabled={!selectedColumn}>
+          Generate Histogram
+        </button>
+      </Modal>
 
       {knnModalOpen && (
         <div className="modal">
@@ -724,84 +730,105 @@ function App() {
                   min="1"
                 />
               </label>
+              <label>
+                Y Column:
+                <select onChange={(e) => setKnnY(e.target.value)} value={knnY}>
+                  <option value="">Select a column</option>
+                  {columns.map((col, index) => (
+                    <option key={index} value={col}>{col}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={predictAlso}
+                  onChange={(e) => setPredictAlso(e.target.checked)}
+                />
+                Predict also
+              </label>
+
+              {predictAlso && (
+                <div className="predict-values">
+                  <h3>Enter values for prediction:</h3>
+                  {columns.filter(c => c !== knnY).map(col => (
+                    <div key={col} className="form-group">
+                      <label>{col}:</label>
+                      <input
+                        type="number"
+                        step="any"
+                        value={predictValues[col] || ''}
+                        onChange={(e) => handlePredictChange(col, e.target.value)}
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+              
               <button type="submit">Run KNN</button>
             </form>
           </div>
         </div>
       )}
 
-      {predictModalOpen && (
-        <div className="modal">
-          <div className="modal-content">
-            <span className="close" onClick={closePredictModal}>&times;</span>
-            <h2>Make a Prediction</h2>
-            <form onSubmit={handlePredictSubmit} className="predict-form">
-              <label>
-                Mean Radius
-                <input
-                  type="number"
-                  name="mean_radius"
-                  value={predictData.mean_radius}
-                  onChange={handlePredictChange}
-                  placeholder="Mean Radius"
-                  step="any"
-                />
-              </label>
-              <label>
-                Mean Area
-                <input
-                  type="number"
-                  name="mean_area"
-                  value={predictData.mean_area}
-                  onChange={handlePredictChange}
-                  placeholder="Mean Area"
-                  step="any"
-                />
-              </label>
-              <label>
-                Mean Perimeter
-                <input
-                  type="number"
-                  name="mean_perimeter"
-                  value={predictData.mean_perimeter}
-                  onChange={handlePredictChange}
-                  placeholder="Mean Perimeter"
-                  step="any"
-                />
-              </label>
-              <label>
-                Mean Texture
-                <input
-                  type="number"
-                  name="mean_texture"
-                  value={predictData.mean_texture}
-                  onChange={handlePredictChange}
-                  placeholder="Mean Texture"
-                  step="any"
-                />
-              </label>
-              <label>
-                Mean Smoothness
-                <input
-                  type="number"
-                  name="mean_smoothness"
-                  value={predictData.mean_smoothness}
-                  onChange={handlePredictChange}
-                  placeholder="Mean Smoothness"
-                  step="any"
-                />
-              </label>
-              <button type="submit">Predict</button>
-            </form>
-            {predictionResult !== null && (
-              <div>
-                <h3>Prediction Result:</h3>
-                <p>{predictionResult === 0 ? "No Cancer (0)" : "Cancer (1)"}</p>
-              </div>
-            )}
+      <Modal
+        isOpen={nullValuesModalOpen}
+        onClose={closeNullValuesModal}
+        title="Custom Null Values"
+      >
+        <div>
+          <p>Columns to be checked:</p>
+          <div className="form-group">
+            <label>
+              <input 
+                type="checkbox" 
+                onChange={(e) => {
+                  const { checked } = e.target;
+                  const allColumns = columns.reduce((acc, col) => {
+                    acc[col] = checked;
+                    return acc;
+                  }, {});
+                  setSelectedColumnsForNullCheck(allColumns);
+                }}
+              />
+              Select All
+            </label>
           </div>
+          <div className="checkbox-group">
+            {columns.map(col => (
+              <label key={col}>
+                <input 
+                  type="checkbox" 
+                  name={col}
+                  checked={selectedColumnsForNullCheck[col] || false} 
+                  onChange={handleCheckboxChange} 
+                />
+                {col}
+              </label>
+            ))}
+          </div>
+          <div className="form-group">
+            <label>Custom Null Value:</label>
+            <input 
+              type="text" 
+              value={currentCustomNullValue} 
+              onChange={(e) => setCurrentCustomNullValue(e.target.value)} 
+            />
+            <button onClick={addCustomNullValue}>Add</button>
+            <button onClick={clearCustomNullValues}>Clear</button>
+          </div>
+          <div>
+            <p>Custom Null Values List:</p>
+            <ul>
+              {customNullValues.map((val, index) => <li key={index}>{val}</li>)}
+            </ul>
+          </div>
+          <button onClick={fetchNullValues}>Check Null Values</button>
+          <span style={{ marginRight: '10px' }}></span>
+          <button onClick={handleFixNullValues}>Corrigir Nulos</button>
         </div>
-      )}
+      </Modal>
+
 
       {fixModalOpen && (
         <div className="modal">

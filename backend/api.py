@@ -11,7 +11,7 @@ import base64
 from sklearn import *
 from sklearn.model_selection import train_test_split
 from sklearn.neighbors import KNeighborsClassifier 
-from sklearn.metrics import accuracy_score
+from sklearn.metrics import accuracy_score, classification_report
 import missingno as msno
 import seaborn as sns
 
@@ -109,14 +109,50 @@ def get_describe():
     except Exception as e:
         return jsonify({'error': f'Failed to compute describe: {str(e)}'}), 500
 
-@app.route('/null-values', methods=['GET'])
+@app.route('/null-values', methods=['GET', 'POST'])
 def get_null_values():
     if df is None:
         return jsonify({'error': 'No dataframe loaded'}), 400
     
-    df_temp = df.replace(MISSING_VALUE_TOKENS, pd.NA)
-        
-    null_counts = df_temp.isnull().sum()
+    custom_null_values = []
+    columns_to_check = None
+    if request.method == 'POST':
+        data = request.get_json()
+        if data:
+            custom_null_values = data.get('custom_null_values', [])
+            columns_to_check = data.get('columns_to_check')
+
+    all_missing_tokens = MISSING_VALUE_TOKENS + custom_null_values
+    
+    # Create a temporary DataFrame for null value checking
+    df_temp = df.copy() # Work on a copy to avoid side effects
+
+    # Determine which columns to process
+    columns_to_process = df.columns
+    if columns_to_check and isinstance(columns_to_check, list):
+        valid_columns = [col for col in columns_to_check if col in df.columns]
+        if not valid_columns:
+            return jsonify({'error': 'None of the selected columns exist in the dataframe'}), 400
+        columns_to_process = valid_columns
+
+    # First, replace all standard missing tokens and custom values with pd.NA
+    # This ensures that values like '?' or 'missing' are handled uniformly.
+    df_temp[columns_to_process] = df_temp[columns_to_process].replace(all_missing_tokens, pd.NA)
+
+    # Second, iterate through custom null values and coerce them to the column's dtype
+    # This is crucial for cases where a custom null is a number (e.g., 999) but stored as a string.
+    for val in custom_null_values:
+        for col in columns_to_process:
+            try:
+                # Attempt to convert the custom null value to the column's dtype
+                coerced_val = pd.Series([val]).astype(df_temp[col].dtype).iloc[0]
+                df_temp[col] = df_temp[col].replace(coerced_val, pd.NA)
+            except (ValueError, TypeError):
+                # If conversion fails (e.g., trying to cast 'N/A' to int), just continue
+                continue
+    
+    # After all replacements, calculate the null counts for the processed columns.
+    null_counts = df_temp[columns_to_process].isnull().sum()
     
     total = null_counts.to_dict()
 
@@ -152,21 +188,6 @@ def fix_dataset():
         }), 200
     except Exception as e:
         return jsonify({'error': f'Failed to fix dataset: {str(e)}'}), 500
-
-@app.route('/download-fixed-dataset', methods=['GET'])
-def download_fixed_dataset():
-    if df is None:
-        return jsonify({'error': 'No dataframe loaded'}), 400
-
-    csv_buffer = io.StringIO()
-    df.to_csv(csv_buffer, index=False)
-    csv_buffer.seek(0)
-
-    return Response(
-        csv_buffer.getvalue(),
-        mimetype='text/csv',
-        headers={'Content-Disposition': 'attachment; filename=fixed_dataset.csv'}
-    )
 
 @app.route('/download-reduced-dataset', methods=['GET'])
 def download_reduced_dataset():
@@ -350,94 +371,159 @@ def get_scatterplot3d():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-@app.route('/traintest', methods=['GET'])
+@app.route('/traintest', methods=['GET', 'POST'])
 def get_traintest():
     if df is None:
         return jsonify({'error': 'No dataframe loaded'}), 400
-    
+
     n_neighbors = request.args.get('n_neighbors', default=3, type=int)
-    
-    x = df[["Age", "Dx:CIN", "Dx:Cancer", "Dx:HPV", "First sexual intercourse", 
-            "Hinselmann", "Hormonal Contraceptives", 
-            "Hormonal Contraceptives (years)", "Num of pregnancies",
-            "Number of sexual partners", "STDs (number)",
-            "STDs: Number of diagnosis", "STDs: Time since first diagnosis",
-            "STDs: Time since last diagnosis", "STDs:HIV", "STDs:HPV",
-            "STDs:Hepatitis B", "STDs:cervical condylomatosis",
-            "STDs:condylomatosis", "STDs:genital herpes",
-            "STDs:molluscum contagiosum", "STDs:pelvic inflammatory disease",
-            "STDs:syphilis", "STDs:vaginal condylomatosis",
-            "STDs:vulvo-perineal condylomatosis", "Schiller",
-            "Smokes", "Smokes (packs/year)", "Smokes (years)"]]	
-    
-    y = df["IUD"]
-    
-    x_train, x_test, y_train, y_test = train_test_split(x,
-                                                        y,
-                                                        test_size = 0.2,
-                                                        stratify = y,
-                                                        random_state = 42)
-    
-    modelo_classificador = KNeighborsClassifier(n_neighbors=n_neighbors)
-    modelo_classificador.fit(x_train, y_train)
-    
-    
-    y_pred = modelo_classificador.predict(x_test)
-    acuracia = accuracy_score(y_test, y_pred)
+    y_col = request.args.get('y_col')
+    predict = request.args.get('predict', 'false').lower() == 'true'
 
-    train_size = len(x_train)
-    test_size = len(x_test)
-    
-    diagnosis_counts = df['IUD'].value_counts()
-    diag_0_count = diagnosis_counts.get(0, 0)
-    diag_1_count = diagnosis_counts.get(1, 0)
+    if not y_col or y_col not in df.columns:
+        return jsonify({'error': 'Invalid or missing y_col parameter'}), 400
 
-    html_response = f"""
-    <div>
-        <h3>Resultados do Treinamento e Teste</h3>
-        <p><strong>Tamanho do Conjunto de Treino:</strong> {train_size}</p>
-        <p><strong>Tamanho do Conjunto de Teste:</strong> {test_size}</p>
-        <h4>Contagem de Diagnósticos no Dataset Completo</h4>
-        <p><strong>Diagnóstico 0:</strong> {diag_0_count}</p>
-        <p><strong>Diagnóstico 1:</strong> {diag_1_count}</p>
-        <h4>Performance do Modelo</h4>
-        <p><strong>Acurácia:</strong> {acuracia:.4f}</p>
-    </div>
-    """
-    
-    return jsonify({'html': html_response}), 200
+    try:
+        x = df.drop(columns=[y_col])
+        y = df[y_col]
+        
+        x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.2, stratify=y, random_state=42)
+        
+        modelo_classificador = KNeighborsClassifier(n_neighbors=n_neighbors)
+        modelo_classificador.fit(x_train, y_train)
+        
+        y_pred = modelo_classificador.predict(x_test)
+        accuracy = accuracy_score(y_test, y_pred)
+        
+        metrics_report = classification_report(y_test, y_pred, output_dict=True)
+        
+        html_response = f"""
+        <div>
+            <h3>Train-Test Split Details</h3>
+            <p><strong>Training set size:</strong> {len(x_train)} samples</p>
+            <p><strong>Test set size:</strong> {len(x_test)} samples</p>
+            <p><strong>Accuracy:</strong> {accuracy:.4f}</p>
+            <h4>Classification Metrics</h4>
+            <pre>{json.dumps(metrics_report, indent=2)}</pre>
+        </div>
+        """
 
+        if predict:
+            if request.method != 'POST':
+                return jsonify({'error': 'POST method required for prediction'}), 405
+            
+            data = request.get_json()
+            if not data or 'predict_values' not in data:
+                return jsonify({'error': 'Missing predict_values in request body'}), 400
 
-@app.route('/predict', methods=['POST'])
-def predict():
+            predict_values = data['predict_values']
+            
+            user_input = {}
+            for col in x.columns:
+                value = predict_values.get(col)
+                if value is None or value == '':
+                    return jsonify({'error': f'Missing value for {col}'}), 400
+                try:
+                    user_input[col] = [float(value)]
+                except (ValueError, TypeError):
+                    return jsonify({'error': f'Invalid input for {col}: must be a number'}), 400
+            
+            user_df = pd.DataFrame.from_dict(user_input)
+            prediction = modelo_classificador.predict(user_df)
+            
+            html_response += f"""
+            <div>
+                <h3>Prediction Result</h3>
+                <p><strong>The prediction is:</strong> {prediction[0]}</p>
+            </div>
+            """
+        
+        return jsonify({'html': html_response}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/fix-nulls', methods=['POST'])
+def fix_nulls():
+    global df
     if df is None:
         return jsonify({'error': 'No dataframe loaded'}), 400
-    
-    data = request.get_json()
-    if not data or not all(k in data for k in ['mean_radius', 'mean_area', 'mean_perimeter', 'mean_texture', 'mean_smoothness', 'n_neighbors']):
-        return jsonify({'error': 'Missing required parameters'}), 400
-    
-    try:
-        radius = float(data['mean_radius'])
-        area = float(data['mean_area'])
-        perimeter = float(data['mean_perimeter'])
-        texture = float(data['mean_texture'])
-        smoothness = float(data['mean_smoothness'])
-        n_neighbors = int(data['n_neighbors'])
-    except (ValueError, TypeError):
-        return jsonify({'error': 'Invalid input data type'}), 400
 
-    x = df[["mean_radius", "mean_area", "mean_perimeter", "mean_texture", "mean_smoothness"]]
-    y = df["diagnosis"]
-    
-    # It's better to train the model once and reuse it, but for simplicity here we train on each predict call.
-    # For a production scenario, consider training the model when the app starts.
-    modelo_classificador = KNeighborsClassifier(n_neighbors=n_neighbors)
-    modelo_classificador.fit(x, y)
-    
-    prediction = modelo_classificador.predict([[radius, area, perimeter, texture, smoothness]])
-    
-    return jsonify({'prediction': int(prediction[0])}), 200
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'Invalid request body'}), 400
+
+    custom_null_values = data.get('custom_null_values', [])
+    columns_to_fix = data.get('columns_to_fix')
+
+    if not columns_to_fix or not isinstance(columns_to_fix, list):
+        return jsonify({'error': 'columns_to_fix must be a non-empty list'}), 400
+
+    try:
+        all_missing_tokens = MISSING_VALUE_TOKENS + custom_null_values
+
+        # Create a copy to safely perform replacements and calculations
+        df_temp = df.copy()
+
+        # Step 1: Replace all known missing tokens with pd.NA in the specified columns
+        df_temp[columns_to_fix] = df_temp[columns_to_fix].replace(all_missing_tokens, pd.NA)
+
+        # Step 2: Coerce custom null values to the correct dtype for robust replacement
+        for val in custom_null_values:
+            for col in columns_to_fix:
+                if col in df_temp.columns:
+                    try:
+                        coerced_val = pd.Series([val]).astype(df_temp[col].dtype).iloc[0]
+                        df_temp[col] = df_temp[col].replace(coerced_val, pd.NA)
+                    except (ValueError, TypeError):
+                        continue
+        
+        # Step 3: Now that nulls are standardized, fill them with the median
+        for col in columns_to_fix:
+            if col in df.columns:
+                # Coerce column to numeric, ignoring errors to handle non-numeric data
+                numeric_col = pd.to_numeric(df_temp[col], errors='coerce')
+                
+                # Check if the column is of a numeric type before filling
+                if pd.api.types.is_numeric_dtype(numeric_col):
+                    median_val = numeric_col.median()
+                    
+                    # Fill NA values in the original DataFrame using the calculated median
+                    # We use df_temp's null mask to fill the original df
+                    df.loc[df_temp[col].isnull(), col] = median_val
+                else:
+                    # Skip non-numeric columns as median is not applicable
+                    pass
+        
+        return jsonify({
+            'message': 'Null values in selected columns fixed successfully using the median.',
+            'download_endpoint': '/download-fixed-dataset'
+        }), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/download-fixed-dataset', methods=['GET'])
+def download_fixed_dataset():
+    if df is None:
+        return jsonify({'error': 'No dataframe loaded'}), 400
+
+    filename = request.args.get('filename', 'fixed_dataset.csv')
+    # Keep filename safe for header usage
+    safe_filename = re.sub(r'[^A-Za-z0-9._-]', '_', filename) or 'fixed_dataset.csv'
+    if not safe_filename.lower().endswith('.csv'):
+        safe_filename += '.csv'
+
+    try:
+        csv_buffer = io.StringIO()
+        df.to_csv(csv_buffer, index=False)
+        csv_buffer.seek(0)
+        return Response(
+            csv_buffer.getvalue(),
+            mimetype='text/csv',
+            headers={'Content-Disposition': f'attachment; filename={safe_filename}'}
+        )
+    except Exception as e:
+        return jsonify({'error': f'Failed to generate fixed dataset: {str(e)}'}), 500
 
 
 if __name__ == '__main__':
