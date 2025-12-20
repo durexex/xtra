@@ -14,6 +14,7 @@ from sklearn.neighbors import KNeighborsClassifier
 from sklearn.metrics import accuracy_score, classification_report
 import missingno as msno
 import seaborn as sns
+import math
 
 # Use a non-interactive backend for matplotlib
 plt.switch_backend('Agg')
@@ -264,6 +265,20 @@ def get_scatterplot():
         plt.xlabel(x_col)
         plt.ylabel(y_col)
         plt.title(f'Scatter Plot: {x_col} vs {y_col}')
+
+        # Calculate correlation using pandas corr and render it on the chart
+        corr_matrix = df[[x_col, y_col]].corr()
+        corr_value = corr_matrix.iloc[0, 1]
+        corr_label = 'N/A' if pd.isna(corr_value) else f'{corr_value:.4f}'
+        plt.gca().annotate(
+            f'Correlation (pandas corr): {corr_label}',
+            xy=(0.05, 0.95),
+            xycoords='axes fraction',
+            fontsize=9,
+            ha='left',
+            va='top',
+            bbox=dict(boxstyle='round', facecolor='white', alpha=0.7)
+        )
         
         # Save plot to a memory buffer
         buf = io.BytesIO()
@@ -274,7 +289,13 @@ def get_scatterplot():
         image_base64 = base64.b64encode(buf.getvalue()).decode('utf-8')
         buf.close()
         
-        return jsonify({'image': image_base64}), 200
+        response_payload = {'image': image_base64}
+        if not pd.isna(corr_value):
+            response_payload['correlation'] = float(corr_value)
+        else:
+            response_payload['correlation'] = None
+        
+        return jsonify(response_payload), 200
         
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -307,29 +328,47 @@ def get_boxplot():
 
 @app.route('/histogram', methods=['GET'])
 def get_histogram():
-  if df is None:
-      return jsonify({'error': 'No dataframe loaded'}), 400
-  
-  column = request.args.get('column')
-  if not column or column not in df.columns:
-      return jsonify({'error': 'Invalid or missing column parameter'}), 400
-      
-  try:
-      plt.figure()
-      sns.histplot(df[column], kde=True)
-      plt.title(f'Histogram of {column}')
-      
-      buf = io.BytesIO()
-      plt.savefig(buf, format='png')
-      buf.seek(0)
-      
-      image_base64 = base64.b64encode(buf.getvalue()).decode('utf-8')
-      buf.close()
-      
-      return jsonify({'image': image_base64}), 200
-      
-  except Exception as e:
-      return jsonify({'error': str(e)}), 500
+    if df is None:
+        return jsonify({'error': 'No dataframe loaded'}), 400
+    
+    try:
+        numeric_df = df.select_dtypes(include=['number'])
+        if numeric_df.empty:
+            return jsonify({'error': 'No numeric columns available for histogram'}), 400
+
+        # Choose bin count based on dataset size, capped for readability
+        row_count = len(numeric_df)
+        bins = max(10, min(50, int(math.sqrt(row_count)) if row_count > 0 else 10))
+
+        # Determine a reasonable figure size based on the number of histograms
+        num_cols = numeric_df.shape[1]
+        cols_per_row = min(4, max(1, int(math.ceil(math.sqrt(num_cols)))))
+        rows = int(math.ceil(num_cols / cols_per_row))
+        figsize = (min(20, cols_per_row * 4), min(15, rows * 3.5))
+
+        axes = numeric_df.hist(bins=bins, figsize=figsize)
+        plt.tight_layout()
+
+        # Retrieve the figure from the axes object
+        fig = axes.ravel()[0].figure if hasattr(axes, 'ravel') else plt.gcf()
+
+        buf = io.BytesIO()
+        fig.savefig(buf, format='png')
+        buf.seek(0)
+        
+        image_base64 = base64.b64encode(buf.getvalue()).decode('utf-8')
+        buf.close()
+        plt.close(fig)
+        
+        return jsonify({
+            'image': image_base64,
+            'bins': int(bins),
+            'figsize': [float(figsize[0]), float(figsize[1])],
+            'columns': list(numeric_df.columns)
+        }), 200
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/scatterplot3d', methods=['GET'])
 def get_scatterplot3d():
@@ -357,14 +396,7 @@ def get_scatterplot3d():
         ax.set_zlabel(z_col)
         plt.title(f'3D Scatter Plot: {x_col} vs {y_col} vs {z_col}')
         
-        # Save plot to a memory buffer
-        buf = io.BytesIO()
-        plt.savefig(buf, format='png')
-        buf.seek(0)
-        
-        # Encode image to base64
-        image_base64 = base64.b64encode(buf.getvalue()).decode('utf-8')
-        buf.close()
+        image_base64 = _save_plot_to_base64()
         
         return jsonify({'image': image_base64}), 200
         

@@ -18,8 +18,10 @@ function App() {
   const [scatterX, setScatterX] = useState('');
   const [scatterY, setScatterY] = useState('');
   const [scatterPlotImage, setScatterPlotImage] = useState('');
+  const [scatterCorrelation, setScatterCorrelation] = useState(null);
   const [boxplotImage, setBoxplotImage] = useState('');
   const [histogramImage, setHistogramImage] = useState('');
+  const [histogramDetails, setHistogramDetails] = useState(null);
   const [knnModalOpen, setKnnModalOpen] = useState(false);
   const [nNeighbors, setNNeighbors] = useState(3);
   const [knnY, setKnnY] = useState('');
@@ -64,6 +66,9 @@ function App() {
         setGridData([]);
         setGridTitle('');
         setScatterPlotImage('');
+        setScatterCorrelation(null);
+        setHistogramImage('');
+        setHistogramDetails(null);
         setHtmlContent('');
         setInfoData(null);
         setInfoError(null);
@@ -104,8 +109,10 @@ function App() {
         setGridData(data);
         setGridTitle('DataFrame Head:');
         setScatterPlotImage('');
+        setScatterCorrelation(null);
         setBoxplotImage('');
         setHistogramImage('');
+        setHistogramDetails(null);
         setHtmlContent('');
       } else {
         alert(`Error: ${data.error}`);
@@ -132,8 +139,10 @@ function App() {
         setGridData(transformedData);
         setGridTitle('DataFrame Describe:');
         setScatterPlotImage('');
+        setScatterCorrelation(null);
         setBoxplotImage('');
         setHistogramImage('');
+        setHistogramDetails(null);
         setHtmlContent('');
       } else {
         alert(`Error: ${data.error}`);
@@ -192,6 +201,9 @@ function App() {
         setGridData(transformedData);
         setGridTitle('Valores Nulos por Coluna:');
         setScatterPlotImage('');
+        setScatterCorrelation(null);
+        setHistogramImage('');
+        setHistogramDetails(null);
         setHtmlContent('');
         closeNullValuesModal();
       } else {
@@ -296,8 +308,10 @@ function App() {
         setGridData([]);
         setGridTitle('');
         setScatterPlotImage('');
+        setScatterCorrelation(null);
         setBoxplotImage('');
         setHistogramImage('');
+        setHistogramDetails(null);
         setHtmlContent('');
         if (data.info) {
           setInfoData(data.info);
@@ -357,6 +371,9 @@ function App() {
         setGridData(transformedData);
         setGridTitle(`Grouped Describe by ${selectedColumn}:`);
         setScatterPlotImage('');
+        setScatterCorrelation(null);
+        setHistogramImage('');
+        setHistogramDetails(null);
         setHtmlContent('');
         closeGroupByModal();
       } else {
@@ -382,6 +399,9 @@ function App() {
         setGridTitle('');
         setHtmlContent('');
         setScatterPlotImage('');
+        setScatterCorrelation(null);
+        setHistogramImage('');
+        setHistogramDetails(null);
         closeBoxplotModal();
       } else {
         alert(`Error: ${data.error}`);
@@ -392,20 +412,22 @@ function App() {
     }
   };
 
-  const handleHistogramSubmit = async (column) => {
-    if (!column) {
-      alert("Please select a column.");
-      return;
-    }
+  const handleHistogramSubmit = async () => {
     try {
-      const response = await fetch(`http://localhost:5000/histogram?column=${column}`);
+      const response = await fetch('http://localhost:5000/histogram');
       const data = await response.json();
       if (response.ok) {
         setHistogramImage(`data:image/png;base64,${data.image}`);
+        setHistogramDetails({
+          bins: data.bins,
+          figsize: data.figsize,
+          columns: data.columns,
+        });
         setGridData([]);
         setGridTitle('');
         setHtmlContent('');
         setScatterPlotImage('');
+        setScatterCorrelation(null);
         setBoxplotImage('');
         closeHistogramModal();
       } else {
@@ -431,11 +453,13 @@ function App() {
       const data = await response.json();
       if (response.ok) {
         setScatterPlotImage(`data:image/png;base64,${data.image}`);
+        setScatterCorrelation(data.correlation ?? null);
         setGridData([]);
         setGridTitle('');
         setHtmlContent('');
         setBoxplotImage('');
         setHistogramImage('');
+        setHistogramDetails(null);
         closeScatterPlotModal();
       } else {
         alert(`Error: ${data.error}`);
@@ -452,9 +476,12 @@ function App() {
       const data = await response.json();
       if (response.ok) {
         setScatterPlotImage(`data:image/png;base64,${data.image}`);
+        setScatterCorrelation(null);
         setGridData([]);
         setGridTitle('');
         setHtmlContent('');
+        setHistogramImage('');
+        setHistogramDetails(null);
       } else {
         alert(`Error: ${data.error}`);
       }
@@ -485,6 +512,9 @@ function App() {
         setGridData([]);
         setGridTitle('');
         setScatterPlotImage('');
+        setScatterCorrelation(null);
+        setHistogramImage('');
+        setHistogramDetails(null);
       } else {
         alert(`Error: ${data.error}`);
       }
@@ -604,6 +634,7 @@ function App() {
         {scatterPlotImage && (
           <div>
             <h2>Scatter Plot:</h2>
+            <p>Correlacao (pandas corr): {scatterCorrelation === null ? 'N/A' : scatterCorrelation.toFixed(4)}</p>
             <img src={scatterPlotImage} alt="Scatter Plot" />
           </div>
         )}
@@ -615,7 +646,14 @@ function App() {
        )}
        {histogramImage && (
          <div>
-           <h2>Histogram:</h2>
+           <h2>Histogramas:</h2>
+           {histogramDetails && (
+             <p>
+               Bins: {histogramDetails.bins ?? '-'} | Figsize: (
+               {histogramDetails.figsize ? histogramDetails.figsize[0] : '-'} x {histogramDetails.figsize ? histogramDetails.figsize[1] : '-'}
+               ) | Colunas: {histogramDetails.columns ? histogramDetails.columns.length : '-'}
+             </p>
+           )}
            <img src={histogramImage} alt="Histogram" />
          </div>
        )}
@@ -703,16 +741,11 @@ function App() {
       <Modal
         isOpen={histogramModalOpen}
         onClose={closeHistogramModal}
-        title="Select Column for Histogram"
+        title="Histogramas"
       >
-        <RadioGroup
-          options={columns}
-          selectedOption={selectedColumn}
-          onChange={setSelectedColumn}
-        />
-        <button onClick={() => handleHistogramSubmit(selectedColumn)} disabled={!selectedColumn}>
-          Generate Histogram
-        </button>
+        <p>Gerar histogramas para todas as colunas numericas usando pandas DataFrame.hist.</p>
+        <p>As configuracoes de bins e tamanho da figura sao ajustadas automaticamente pelo backend.</p>
+        <button onClick={handleHistogramSubmit}>Gerar histogramas</button>
       </Modal>
 
       {knnModalOpen && (
