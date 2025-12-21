@@ -22,10 +22,12 @@ function App() {
   const [scatterCorrelation, setScatterCorrelation] = useState(null);
   const [correlationMatrixImage, setCorrelationMatrixImage] = useState('');
   const [boxplotImage, setBoxplotImage] = useState('');
+  const [boxplotColumn, setBoxplotColumn] = useState('');
   const [histogramImage, setHistogramImage] = useState('');
   const [histogramDetails, setHistogramDetails] = useState(null);
   const [categorizeColumn, setCategorizeColumn] = useState('');
   const [categorizeBins, setCategorizeBins] = useState('');
+  const [categorizeAllowDecimals, setCategorizeAllowDecimals] = useState(false);
   const [categorizeHistBefore, setCategorizeHistBefore] = useState('');
   const [categorizeHistAfter, setCategorizeHistAfter] = useState('');
   const [categorizeInfo, setCategorizeInfo] = useState(null);
@@ -36,6 +38,11 @@ function App() {
   const [knnY, setKnnY] = useState('');
   const [predictAlso, setPredictAlso] = useState(false);
   const [predictValues, setPredictValues] = useState({});
+  const [linearModalOpen, setLinearModalOpen] = useState(false);
+  const [linearTargetColumn, setLinearTargetColumn] = useState('');
+  const [linearTestSize, setLinearTestSize] = useState(0.2);
+  const [linearMetrics, setLinearMetrics] = useState(null);
+  const [linearPredictions, setLinearPredictions] = useState([]);
   const [nullValuesModalOpen, setNullValuesModalOpen] = useState(false);
   const [customNullValues, setCustomNullValues] = useState([]);
   const [currentCustomNullValue, setCurrentCustomNullValue] = useState('');
@@ -53,6 +60,18 @@ function App() {
   const [selectedColumnsForConvert, setSelectedColumnsForConvert] = useState({});
   const [reducedModalOpen, setReducedModalOpen] = useState(false);
   const [selectedColumnsForReduced, setSelectedColumnsForReduced] = useState({});
+
+  const resetLinearRegressionOutput = () => {
+    setLinearMetrics(null);
+    setLinearPredictions([]);
+  };
+
+  const formatMetric = (value) => {
+    if (value === null || value === undefined || Number.isNaN(value)) {
+      return '-';
+    }
+    return Number(value).toFixed(4);
+  };
 
   const handleFileChange = (e) => {
     setFile(e.target.files[0]);
@@ -82,6 +101,8 @@ function App() {
         setScatterPlotImage('');
         setScatterCorrelation(null);
         setCorrelationMatrixImage('');
+        setBoxplotImage('');
+        setBoxplotColumn('');
         setHistogramImage('');
         setHistogramDetails(null);
         setHtmlContent('');
@@ -89,12 +110,17 @@ function App() {
         setInfoError(null);
         setCategorizeColumn('');
         setCategorizeBins('');
+        setCategorizeAllowDecimals(false);
         setCategorizeModalOpen(false);
         setCategorizeHistBefore('');
         setCategorizeHistAfter('');
         setCategorizeInfo(null);
         setCategorizeProportions(null);
         setCategorizeSplitMethod('');
+        resetLinearRegressionOutput();
+        setLinearTargetColumn('');
+        setLinearTestSize(0.2);
+        setLinearModalOpen(false);
       } else {
         alert(`Error: ${data.error}`);
       }
@@ -120,6 +146,8 @@ function App() {
     setKnnModalOpen(true);
   };
   const closeKnnModal = () => setKnnModalOpen(false);
+  const openLinearModal = () => setLinearModalOpen(true);
+  const closeLinearModal = () => setLinearModalOpen(false);
 
   const closeInfoModal = () => {
     setInfoModalOpen(false);
@@ -151,6 +179,7 @@ function App() {
         setScatterPlotImage('');
         setScatterCorrelation(null);
         setBoxplotImage('');
+        setBoxplotColumn('');
         setCorrelationMatrixImage('');
         setHistogramImage('');
         setHistogramDetails(null);
@@ -160,6 +189,7 @@ function App() {
         setCategorizeInfo(null);
         setCategorizeProportions(null);
         setCategorizeSplitMethod('');
+        resetLinearRegressionOutput();
       } else {
         alert(`Error: ${data.error}`);
       }
@@ -187,6 +217,7 @@ function App() {
         setScatterPlotImage('');
         setScatterCorrelation(null);
         setBoxplotImage('');
+        setBoxplotColumn('');
         setCorrelationMatrixImage('');
         setHistogramImage('');
         setHistogramDetails(null);
@@ -195,6 +226,7 @@ function App() {
         setCategorizeHistAfter('');
         setCategorizeInfo(null);
         setCategorizeProportions(null);
+        resetLinearRegressionOutput();
       } else {
         alert(`Error: ${data.error}`);
       }
@@ -294,6 +326,7 @@ function App() {
         setCategorizeProportions(null);
         setCategorizeSplitMethod('');
         setHtmlContent('');
+        resetLinearRegressionOutput();
         closeNullValuesModal();
       } else {
         alert(`Error: ${data.error}`);
@@ -411,6 +444,7 @@ function App() {
         setScatterPlotImage('');
         setScatterCorrelation(null);
         setBoxplotImage('');
+        setBoxplotColumn('');
         setHistogramImage('');
         setHistogramDetails(null);
         setCategorizeHistBefore('');
@@ -487,6 +521,7 @@ function App() {
         setCategorizeProportions(null);
         setCategorizeSplitMethod('');
         setHtmlContent('');
+        resetLinearRegressionOutput();
         closeGroupByModal();
       } else {
         alert(`Error: ${data.error}`);
@@ -507,6 +542,7 @@ function App() {
       const data = await response.json();
       if (response.ok) {
         setBoxplotImage(`data:image/png;base64,${data.image}`);
+        setBoxplotColumn(column);
         setGridData([]);
         setGridTitle('');
         setHtmlContent('');
@@ -520,6 +556,7 @@ function App() {
         setCategorizeInfo(null);
         setCategorizeProportions(null);
         setCategorizeSplitMethod('');
+        resetLinearRegressionOutput();
         closeBoxplotModal();
       } else {
         alert(`Error: ${data.error}`);
@@ -528,6 +565,31 @@ function App() {
       console.error('Error fetching boxplot data:', error);
       alert('An error occurred while fetching the boxplot data.');
     }
+  };
+
+  const downloadImageWithName = (dataUrl, suggestedName) => {
+    if (!dataUrl) {
+      return;
+    }
+    const defaultName = suggestedName || 'download.png';
+    const input = window.prompt('Digite o nome do arquivo para salvar:', defaultName);
+    if (input === null) {
+      return;
+    }
+    const trimmed = (input || '').trim() || defaultName;
+    const finalName = trimmed.toLowerCase().endsWith('.png') ? trimmed : `${trimmed}.png`;
+
+    const link = document.createElement('a');
+    link.href = dataUrl;
+    link.download = finalName;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  };
+
+  const handleBoxplotDownload = () => {
+    const suggestedName = `boxplot_${boxplotColumn || 'plot'}.png`;
+    downloadImageWithName(boxplotImage, suggestedName);
   };
 
   const handleHistogramSubmit = async () => {
@@ -547,12 +609,14 @@ function App() {
         setScatterPlotImage('');
         setScatterCorrelation(null);
         setBoxplotImage('');
+        setBoxplotColumn('');
         setCorrelationMatrixImage('');
         setCategorizeHistBefore('');
         setCategorizeHistAfter('');
         setCategorizeInfo(null);
         setCategorizeProportions(null);
         setCategorizeSplitMethod('');
+        resetLinearRegressionOutput();
         closeHistogramModal();
       } else {
         alert(`Error: ${data.error}`);
@@ -575,6 +639,7 @@ function App() {
         setScatterPlotImage('');
         setScatterCorrelation(null);
         setBoxplotImage('');
+        setBoxplotColumn('');
         setHistogramImage('');
         setHistogramDetails(null);
         setCategorizeHistBefore('');
@@ -582,6 +647,7 @@ function App() {
         setCategorizeInfo(null);
         setCategorizeProportions(null);
         setCategorizeSplitMethod('');
+        resetLinearRegressionOutput();
       } else {
         alert(`Error: ${data.error}`);
       }
@@ -610,6 +676,7 @@ function App() {
         setGridTitle('');
         setHtmlContent('');
         setBoxplotImage('');
+        setBoxplotColumn('');
         setHistogramImage('');
         setHistogramDetails(null);
         setCorrelationMatrixImage('');
@@ -618,6 +685,7 @@ function App() {
         setCategorizeInfo(null);
         setCategorizeProportions(null);
         setCategorizeSplitMethod('');
+        resetLinearRegressionOutput();
         closeScatterPlotModal();
       } else {
         alert(`Error: ${data.error}`);
@@ -646,12 +714,77 @@ function App() {
         setCategorizeProportions(null);
         setCategorizeSplitMethod('');
         setCorrelationMatrixImage('');
+        resetLinearRegressionOutput();
       } else {
         alert(`Error: ${data.error}`);
       }
     } catch (error) {
       console.error('Error fetching 3D scatter plot data:', error);
       alert('An error occurred while fetching the 3D scatter plot data.');
+    }
+  };
+
+  const handleLinearRegressionSubmit = async (e) => {
+    e.preventDefault();
+    if (!linearTargetColumn) {
+      alert("Selecione a coluna target.");
+      return;
+    }
+
+    const parsedTestSize = parseFloat(linearTestSize);
+    if (Number.isNaN(parsedTestSize) || parsedTestSize <= 0 || parsedTestSize >= 1) {
+      alert("Defina um test_size entre 0 e 1 (ex: 0.2).");
+      return;
+    }
+
+    const payload = {
+      target: linearTargetColumn,
+      test_size: parsedTestSize,
+    };
+
+    try {
+      resetLinearRegressionOutput();
+      const response = await fetch('http://localhost:5000/linear-regression', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+      const data = await response.json();
+      if (response.ok) {
+        const metricsPayload = {
+          target: data.target,
+          featureColumns: data.feature_columns || [],
+          trainSamples: data.train_samples,
+          testSamples: data.test_samples,
+          testSize: data.test_size,
+          ...data.metrics,
+        };
+        setLinearMetrics(metricsPayload);
+        setLinearPredictions(data.sample_predictions || []);
+        setGridData([]);
+        setGridTitle('');
+        setScatterPlotImage('');
+        setScatterCorrelation(null);
+        setHistogramImage('');
+        setHistogramDetails(null);
+        setCategorizeHistBefore('');
+        setCategorizeHistAfter('');
+        setCategorizeInfo(null);
+        setCategorizeProportions(null);
+        setCategorizeSplitMethod('');
+        setCorrelationMatrixImage('');
+        setBoxplotImage('');
+        setBoxplotColumn('');
+        setHtmlContent('');
+        closeLinearModal();
+      } else {
+        alert(`Error: ${data.error}`);
+      }
+    } catch (error) {
+      console.error('Error running linear regression:', error);
+      alert('An error occurred while running linear regression.');
     }
   };
 
@@ -685,6 +818,7 @@ function App() {
         setCategorizeProportions(null);
         setCategorizeSplitMethod('');
         setCorrelationMatrixImage('');
+        resetLinearRegressionOutput();
       } else {
         alert(`Error: ${data.error}`);
       }
@@ -751,7 +885,7 @@ function App() {
       return;
     }
 
-    const payload = { column: categorizeColumn };
+    const payload = { column: categorizeColumn, allow_decimals: categorizeAllowDecimals };
     if (categorizeBins) {
       payload.bins = Number(categorizeBins);
     }
@@ -774,11 +908,13 @@ function App() {
         setScatterCorrelation(null);
         setCorrelationMatrixImage('');
         setBoxplotImage('');
+        setBoxplotColumn('');
         setHistogramImage('');
         setHistogramDetails(null);
         setHtmlContent('');
         setCategorizeColumn('');
         setCategorizeBins('');
+        setCategorizeAllowDecimals(false);
         setCategorizeHistBefore(data.hist_before ? `data:image/png;base64,${data.hist_before}` : '');
         setCategorizeHistAfter(data.hist_after ? `data:image/png;base64,${data.hist_after}` : '');
         setCategorizeInfo({
@@ -789,6 +925,7 @@ function App() {
         });
         setCategorizeProportions(data.proportions || null);
         setCategorizeSplitMethod(data.split_method || '');
+        resetLinearRegressionOutput();
         closeCategorizeModal();
         alert(data.message);
 
@@ -902,6 +1039,7 @@ function App() {
         <button onClick={openScatterPlotModal} disabled={columns.length === 0}>Scatter Plot</button>
         <button onClick={handleScatterPlot3dSubmit} disabled={true}>3D Scatter Plot</button>
         <button onClick={openKnnModal} disabled={columns.length === 0}>KNN (test & train)</button>
+        <button onClick={openLinearModal} disabled={columns.length === 0}>Regressao Linear Multipla</button>
       </div>
       <div className="content">
         <div className="page-shell">
@@ -937,16 +1075,24 @@ function App() {
                 <img src={scatterPlotImage} alt="Scatter Plot" />
               </div>
             )}
-            {correlationMatrixImage && (
+           {correlationMatrixImage && (
               <div>
                 <h2>Matriz de Correlacao (scatter_matrix):</h2>
                 <img src={correlationMatrixImage} alt="Matriz de correlacao" />
               </div>
             )}
-           {boxplotImage && (
-             <div>
-               <h2>Boxplot:</h2>
-               <img src={boxplotImage} alt="Boxplot" />
+            {boxplotImage && (
+              <div>
+                <h2>Boxplot:</h2>
+               <p className="muted">
+                 Clique no boxplot para salvar (sugestão: {`boxplot_${boxplotColumn || 'plot'}.png`}).
+               </p>
+               <img
+                 src={boxplotImage}
+                 alt="Boxplot"
+                 style={{ cursor: 'pointer' }}
+                 onClick={handleBoxplotDownload}
+               />
              </div>
            )}
            {histogramImage && (
@@ -999,6 +1145,51 @@ function App() {
             {gridData.length > 0 && gridTitle.includes('bucketized') && (
               <div style={{ marginTop: '1rem' }}>
                 <p><strong>{gridTitle}</strong></p>
+              </div>
+            )}
+            {linearMetrics && (
+              <div className="table-container">
+                <h2>Regressao Linear Multipla</h2>
+                <p>Target: {linearMetrics.target || '-'}</p>
+                <p>
+                  Colunas de treino:{' '}
+                  {linearMetrics.featureColumns && linearMetrics.featureColumns.length
+                    ? linearMetrics.featureColumns.join(', ')
+                    : 'Nenhuma coluna numerica disponivel'}
+                </p>
+                <p>
+                  Train samples: {linearMetrics.trainSamples ?? '-'} | Test samples: {linearMetrics.testSamples ?? '-'} | Test size:{' '}
+                  {formatMetric(linearMetrics.testSize)}
+                </p>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '8px' }}>
+                  <div><strong>mean_squared_error:</strong> {formatMetric(linearMetrics.mean_squared_error)}</div>
+                  <div><strong>mean_absolute_error:</strong> {formatMetric(linearMetrics.mean_absolute_error)}</div>
+                  <div><strong>r2_score:</strong> {formatMetric(linearMetrics.r2_score)}</div>
+                  <div><strong>MAPE (%):</strong> {formatMetric(linearMetrics.mape)}</div>
+                </div>
+              </div>
+            )}
+            {linearPredictions.length > 0 && (
+              <div className="table-container">
+                <h3>Previsto x Real (amostra)</h3>
+                <table className="grid">
+                  <thead>
+                    <tr>
+                      <th>Real</th>
+                      <th>Previsto</th>
+                      <th>Residuo</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {linearPredictions.map((row, idx) => (
+                      <tr key={idx}>
+                        <td>{formatMetric(row.real)}</td>
+                        <td>{formatMetric(row.predito)}</td>
+                        <td>{formatMetric(row.residuo)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             )}
             {htmlContent && (
@@ -1140,9 +1331,58 @@ function App() {
               onChange={(e) => setCategorizeBins(e.target.value)}
             />
           </div>
+          <label className="toggle">
+            <input
+              type="checkbox"
+              checked={categorizeAllowDecimals}
+              onChange={(e) => setCategorizeAllowDecimals(e.target.checked)}
+            />
+            <span>Permitir numeros decimais nas categorias (desmarcado = inteiros)</span>
+          </label>
           <div className="modal-actions">
             <button type="button" className="btn-ghost" onClick={closeCategorizeModal}>Cancelar</button>
             <button type="submit" className="btn-cta" disabled={!categorizeColumn}>Criar coluna categorizada</button>
+          </div>
+        </form>
+      </Modal>
+
+      <Modal
+        isOpen={linearModalOpen}
+        onClose={closeLinearModal}
+        title="Regressao Linear Multipla"
+        contentClassName="null-modal"
+      >
+        <form onSubmit={handleLinearRegressionSubmit} className="modal-body">
+          <div className="form-group">
+            <label className="form-label">Coluna target</label>
+            <select
+              className="select-styled"
+              value={linearTargetColumn}
+              onChange={(e) => setLinearTargetColumn(e.target.value)}
+              required
+            >
+              <option value="">Selecione</option>
+              {columns.map((col) => (
+                <option key={col} value={col}>{col}</option>
+              ))}
+            </select>
+          </div>
+          <div className="form-group">
+            <label className="form-label">Test size (0 a 1)</label>
+            <input
+              className="input-styled"
+              type="number"
+              step="0.01"
+              min="0.05"
+              max="0.9"
+              value={linearTestSize}
+              onChange={(e) => setLinearTestSize(e.target.value)}
+            />
+          </div>
+          <p className="muted">A coluna target sera removida do treino e as colunas numericas restantes serao usadas no modelo.</p>
+          <div className="modal-actions">
+            <button type="button" className="btn-ghost" onClick={closeLinearModal}>Cancelar</button>
+            <button type="submit" className="btn-cta" disabled={!linearTargetColumn}>Rodar regressao</button>
           </div>
         </form>
       </Modal>

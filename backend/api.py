@@ -11,7 +11,8 @@ import base64
 from sklearn import *
 from sklearn.model_selection import train_test_split, StratifiedShuffleSplit
 from sklearn.neighbors import KNeighborsClassifier 
-from sklearn.metrics import accuracy_score, classification_report
+from sklearn.linear_model import LinearRegression
+from sklearn.metrics import accuracy_score, classification_report, mean_squared_error, mean_absolute_error, r2_score
 import missingno as msno
 import seaborn as sns
 import math
@@ -27,6 +28,25 @@ CORS(app)
 # Store dataframe in memory
 df = None
 MISSING_VALUE_TOKENS = ["Missing", "missing", "MISSING", "?"]
+
+
+def calculate_mape(y_true, y_pred):
+    """
+    Compute mean absolute percentage error, safely filtering out zero values in y_true.
+    """
+    y_true_arr = np.array(y_true, dtype=float)
+    y_pred_arr = np.array(y_pred, dtype=float)
+
+    # Filter out cases where y_true is zero, as MAPE is undefined for them
+    non_zero_mask = y_true_arr != 0
+    if np.sum(non_zero_mask) == 0:
+        return np.inf  # Or 0.0, depending on how you want to handle this edge case
+
+    y_true_filt = y_true_arr[non_zero_mask]
+    y_pred_filt = y_pred_arr[non_zero_mask]
+
+    return float(np.mean(np.abs((y_true_filt - y_pred_filt) / y_true_filt)) * 100)
+
 
 def _build_dataframe_info(target_df: pd.DataFrame) -> dict:
     """
@@ -443,6 +463,12 @@ def categorize_column():
     new_col = data.get('new_column') if column else None
     save_dir = data.get('save_dir') or data.get('save_path')
     save_name = data.get('save_name') or data.get('filename')
+    allow_decimals_raw = data.get('allow_decimals')
+    allow_decimals = False
+    if isinstance(allow_decimals_raw, bool):
+        allow_decimals = allow_decimals_raw
+    elif allow_decimals_raw is not None:
+        allow_decimals = str(allow_decimals_raw).strip().lower() in ('true', '1', 'yes', 'y', 'on')
 
     if not column:
         return jsonify({
@@ -515,13 +541,44 @@ def categorize_column():
         return jsonify({'error': 'Os bins escolhidos nao geraram categorias validas.'}), 400
 
     new_col_name = new_col or f"{column}_category"
-    categorized = pd.Series(pd.NA, index=df.index, dtype="Int64")
-    categorized.loc[cut_codes.index] = cut_codes.astype("Int64")
-    df[new_col_name] = categorized
-
     interval_index = pd.IntervalIndex.from_breaks(bin_edges, closed='right')
-    categories = [str(interval) for interval in interval_index]
-    category_mapping = {int(idx): str(interval) for idx, interval in enumerate(interval_index)}
+
+    # Serie de codigos inteiros base para mapear midpoints ou manter inteiro
+    code_series = pd.Series(pd.NA, index=df.index, dtype="Int64")
+    code_series.loc[cut_codes.index] = cut_codes.astype("Int64")
+
+    def _interval_label(interval, use_decimals, is_first=False):
+        """
+        Build a human label for the bin.
+        - Decimals: keep the native Interval string (open/closed per pd.cut).
+        - Integers: produce non-overlapping integer ranges: [start, end],
+          where the next bin starts at end+1.
+        """
+        if use_decimals:
+            return str(interval)
+
+        left = interval.left
+        right = interval.right
+        # First bin includes the lowest, others are left-open in pd.cut.
+        start = math.floor(left) if is_first else math.floor(left) + 1
+        end = math.floor(right)
+        if start > end:
+            start = end
+        return f"[{int(start)}, {int(end)}]"
+
+    if allow_decimals:
+        midpoint_map = {int(idx): float((bin_edges[idx] + bin_edges[idx + 1]) / 2) for idx in range(len(bin_edges) - 1)}
+        categorized = pd.Series(pd.NA, index=df.index, dtype="Float64")
+        for code_val, midpoint in midpoint_map.items():
+            categorized.loc[code_series == code_val] = midpoint
+        category_mapping = {midpoint_map[int(idx)]: _interval_label(interval, True) for idx, interval in enumerate(interval_index)}
+        categories = [_interval_label(interval, True) for interval in interval_index]
+    else:
+        categorized = code_series
+        category_mapping = {int(idx): _interval_label(interval, False, is_first=(idx==0)) for idx, interval in enumerate(interval_index)}
+        categories = [category_mapping[int(idx)] for idx in range(len(interval_index))]
+
+    df[new_col_name] = categorized
 
     # Histograma da nova coluna categorizada
     fig_new = plt.figure(figsize=(8, 4.5))
@@ -551,8 +608,14 @@ def categorize_column():
         counts = target_df[new_col_name].value_counts()
         denom = len(target_df) if len(target_df) > 0 else 1
         proportions_raw = counts / denom
-        # Map codigo numerico -> intervalo legivel para exibir na tabela
-        return {category_mapping.get(int(idx), str(idx)): float(val) for idx, val in proportions_raw.items()}
+        # Map valor (inteiro ou decimal) -> intervalo legivel (ou codigo inteiro)
+        mapped = {}
+        for idx, val in proportions_raw.items():
+            key = idx
+            if key not in category_mapping and isinstance(key, (int, float)) and key == int(key):
+                key = int(key)
+            mapped[str(category_mapping.get(key, key))] = float(val)
+        return mapped
 
     proportions = {
         'train': _proportions(strat_train_set),
@@ -645,6 +708,99 @@ def get_scatterplot3d():
         
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+@app.route('/linear-regression', methods=['POST'])
+def run_linear_regression():
+    """
+    Execute multiple linear regression using all numeric columns except the chosen target.
+    Drops the target from the training features, splits with iloc, fits the model and returns metrics.
+    """
+    global df
+    if df is None:
+        return jsonify({'error': 'No dataframe loaded'}), 400
+
+    payload = request.get_json(silent=True) or {}
+    target_column = payload.get('target')
+    test_size = payload.get('test_size', 0.2)
+
+    try:
+        test_size = float(test_size)
+    except (TypeError, ValueError):
+        return jsonify({'error': 'test_size must be a number between 0 and 1 (e.g., 0.2).'}), 400
+
+    if not 0 < test_size < 1:
+        return jsonify({'error': 'test_size must be between 0 and 1 (e.g., 0.2).'}), 400
+
+    if not target_column or target_column not in df.columns:
+        return jsonify({'error': 'Invalid or missing target column'}), 400
+
+    try:
+        feature_df = df.drop(columns=[target_column])
+        numeric_features = feature_df.select_dtypes(include=[np.number]).dropna(axis=1, how='all')
+        feature_columns = list(numeric_features.columns)
+
+        if not feature_columns:
+            return jsonify({'error': 'No numeric feature columns available after removing the target column.'}), 400
+
+        target_series = pd.to_numeric(df[target_column], errors='coerce')
+
+        working_df = numeric_features.copy()
+        working_df['__target__'] = target_series
+        working_df = working_df.dropna(subset=['__target__'])
+
+        # Fill missing numeric feature values with column means to keep as many rows as possible.
+        working_df[feature_columns] = working_df[feature_columns].fillna(working_df[feature_columns].mean())
+
+        features = working_df[feature_columns].reset_index(drop=True)
+        target = working_df['__target__'].reset_index(drop=True)
+
+        if len(features) < 2:
+            return jsonify({'error': 'Not enough data after cleaning to train and test the model.'}), 400
+
+        indices = np.arange(len(features))
+        train_idx, test_idx = train_test_split(indices, test_size=test_size, random_state=42)
+
+        x_train = features.iloc[train_idx]
+        x_test = features.iloc[test_idx]
+        y_train = target.iloc[train_idx]
+        y_test = target.iloc[test_idx]
+
+        model = LinearRegression()
+        model.fit(x_train, y_train)
+
+        y_pred = model.predict(x_test)
+
+        # Checa se a coluna de target é de tipo inteiro
+        if pd.api.types.is_integer_dtype(df[target_column]):
+            y_pred = np.round(y_pred).astype(int)
+
+        metrics_payload = {
+            'mean_squared_error': float(mean_squared_error(y_test, y_pred)),
+            'mean_absolute_error': float(mean_absolute_error(y_test, y_pred)),
+            'r2_score': float(r2_score(y_test, y_pred)),
+            'mape': float(calculate_mape(y_test, y_pred))
+        }
+
+        preview_df = pd.DataFrame({
+            'real': y_test.reset_index(drop=True),
+            'predito': y_pred
+        })
+        preview_df['residuo'] = preview_df['real'] - preview_df['predito']
+        sample_predictions = preview_df.head(30).to_dict(orient='records')
+
+        return jsonify({
+            'target': target_column,
+            'feature_columns': feature_columns,
+            'train_samples': int(len(train_idx)),
+            'test_samples': int(len(test_idx)),
+            'test_size': test_size,
+            'metrics': metrics_payload,
+            'sample_predictions': sample_predictions
+        }), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 
 @app.route('/traintest', methods=['GET', 'POST'])
 def get_traintest():
