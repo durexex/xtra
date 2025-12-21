@@ -14,14 +14,23 @@ function App() {
   const [scatterPlotModalOpen, setScatterPlotModalOpen] = useState(false);
   const [boxplotModalOpen, setBoxplotModalOpen] = useState(false);
   const [histogramModalOpen, setHistogramModalOpen] = useState(false);
+  const [categorizeModalOpen, setCategorizeModalOpen] = useState(false);
   const [selectedColumn, setSelectedColumn] = useState('');
   const [scatterX, setScatterX] = useState('');
   const [scatterY, setScatterY] = useState('');
   const [scatterPlotImage, setScatterPlotImage] = useState('');
   const [scatterCorrelation, setScatterCorrelation] = useState(null);
+  const [correlationMatrixImage, setCorrelationMatrixImage] = useState('');
   const [boxplotImage, setBoxplotImage] = useState('');
   const [histogramImage, setHistogramImage] = useState('');
   const [histogramDetails, setHistogramDetails] = useState(null);
+  const [categorizeColumn, setCategorizeColumn] = useState('');
+  const [categorizeBins, setCategorizeBins] = useState('');
+  const [categorizeHistBefore, setCategorizeHistBefore] = useState('');
+  const [categorizeHistAfter, setCategorizeHistAfter] = useState('');
+  const [categorizeInfo, setCategorizeInfo] = useState(null);
+  const [categorizeProportions, setCategorizeProportions] = useState(null);
+  const [categorizeSplitMethod, setCategorizeSplitMethod] = useState('');
   const [knnModalOpen, setKnnModalOpen] = useState(false);
   const [nNeighbors, setNNeighbors] = useState(3);
   const [knnY, setKnnY] = useState('');
@@ -67,11 +76,20 @@ function App() {
         setGridTitle('');
         setScatterPlotImage('');
         setScatterCorrelation(null);
+        setCorrelationMatrixImage('');
         setHistogramImage('');
         setHistogramDetails(null);
         setHtmlContent('');
         setInfoData(null);
         setInfoError(null);
+        setCategorizeColumn('');
+        setCategorizeBins('');
+        setCategorizeModalOpen(false);
+        setCategorizeHistBefore('');
+        setCategorizeHistAfter('');
+        setCategorizeInfo(null);
+        setCategorizeProportions(null);
+        setCategorizeSplitMethod('');
       } else {
         alert(`Error: ${data.error}`);
       }
@@ -91,6 +109,8 @@ function App() {
   const closeBoxplotModal = () => setBoxplotModalOpen(false);
   const openHistogramModal = () => setHistogramModalOpen(true);
   const closeHistogramModal = () => setHistogramModalOpen(false);
+  const openCategorizeModal = () => setCategorizeModalOpen(true);
+  const closeCategorizeModal = () => setCategorizeModalOpen(false);
   const openKnnModal = () => {
     setKnnModalOpen(true);
   };
@@ -111,9 +131,15 @@ function App() {
         setScatterPlotImage('');
         setScatterCorrelation(null);
         setBoxplotImage('');
+        setCorrelationMatrixImage('');
         setHistogramImage('');
         setHistogramDetails(null);
         setHtmlContent('');
+        setCategorizeHistBefore('');
+        setCategorizeHistAfter('');
+        setCategorizeInfo(null);
+        setCategorizeProportions(null);
+        setCategorizeSplitMethod('');
       } else {
         alert(`Error: ${data.error}`);
       }
@@ -141,9 +167,14 @@ function App() {
         setScatterPlotImage('');
         setScatterCorrelation(null);
         setBoxplotImage('');
+        setCorrelationMatrixImage('');
         setHistogramImage('');
         setHistogramDetails(null);
         setHtmlContent('');
+        setCategorizeHistBefore('');
+        setCategorizeHistAfter('');
+        setCategorizeInfo(null);
+        setCategorizeProportions(null);
       } else {
         alert(`Error: ${data.error}`);
       }
@@ -204,6 +235,12 @@ function App() {
         setScatterCorrelation(null);
         setHistogramImage('');
         setHistogramDetails(null);
+        setCorrelationMatrixImage('');
+        setCategorizeHistBefore('');
+        setCategorizeHistAfter('');
+        setCategorizeInfo(null);
+        setCategorizeProportions(null);
+        setCategorizeSplitMethod('');
         setHtmlContent('');
         closeNullValuesModal();
       } else {
@@ -312,6 +349,11 @@ function App() {
         setBoxplotImage('');
         setHistogramImage('');
         setHistogramDetails(null);
+        setCategorizeHistBefore('');
+        setCategorizeHistAfter('');
+        setCategorizeInfo(null);
+        setCategorizeProportions(null);
+        setCorrelationMatrixImage('');
         setHtmlContent('');
         if (data.info) {
           setInfoData(data.info);
@@ -374,6 +416,12 @@ function App() {
         setScatterCorrelation(null);
         setHistogramImage('');
         setHistogramDetails(null);
+        setCorrelationMatrixImage('');
+        setCategorizeHistBefore('');
+        setCategorizeHistAfter('');
+        setCategorizeInfo(null);
+        setCategorizeProportions(null);
+        setCategorizeSplitMethod('');
         setHtmlContent('');
         closeGroupByModal();
       } else {
@@ -402,6 +450,12 @@ function App() {
         setScatterCorrelation(null);
         setHistogramImage('');
         setHistogramDetails(null);
+        setCorrelationMatrixImage('');
+        setCategorizeHistBefore('');
+        setCategorizeHistAfter('');
+        setCategorizeInfo(null);
+        setCategorizeProportions(null);
+        setCategorizeSplitMethod('');
         closeBoxplotModal();
       } else {
         alert(`Error: ${data.error}`);
@@ -429,6 +483,12 @@ function App() {
         setScatterPlotImage('');
         setScatterCorrelation(null);
         setBoxplotImage('');
+        setCorrelationMatrixImage('');
+        setCategorizeHistBefore('');
+        setCategorizeHistAfter('');
+        setCategorizeInfo(null);
+        setCategorizeProportions(null);
+        setCategorizeSplitMethod('');
         closeHistogramModal();
       } else {
         alert(`Error: ${data.error}`);
@@ -436,6 +496,34 @@ function App() {
     } catch (error) {
       console.error('Error fetching histogram data:', error);
       alert('An error occurred while fetching the histogram data.');
+    }
+  };
+
+  const handleCorrelationMatrixSubmit = async () => {
+    try {
+      const response = await fetch('http://localhost:5000/correlation-matrix');
+      const data = await response.json();
+      if (response.ok) {
+        setCorrelationMatrixImage(`data:image/png;base64,${data.image}`);
+        setGridData([]);
+        setGridTitle('');
+        setHtmlContent('');
+        setScatterPlotImage('');
+        setScatterCorrelation(null);
+        setBoxplotImage('');
+        setHistogramImage('');
+        setHistogramDetails(null);
+        setCategorizeHistBefore('');
+        setCategorizeHistAfter('');
+        setCategorizeInfo(null);
+        setCategorizeProportions(null);
+        setCategorizeSplitMethod('');
+      } else {
+        alert(`Error: ${data.error}`);
+      }
+    } catch (error) {
+      console.error('Error fetching correlation matrix:', error);
+      alert('An error occurred while fetching the correlation matrix.');
     }
   };
 
@@ -460,6 +548,12 @@ function App() {
         setBoxplotImage('');
         setHistogramImage('');
         setHistogramDetails(null);
+        setCorrelationMatrixImage('');
+        setCategorizeHistBefore('');
+        setCategorizeHistAfter('');
+        setCategorizeInfo(null);
+        setCategorizeProportions(null);
+        setCategorizeSplitMethod('');
         closeScatterPlotModal();
       } else {
         alert(`Error: ${data.error}`);
@@ -482,6 +576,12 @@ function App() {
         setHtmlContent('');
         setHistogramImage('');
         setHistogramDetails(null);
+        setCategorizeHistBefore('');
+        setCategorizeHistAfter('');
+        setCategorizeInfo(null);
+        setCategorizeProportions(null);
+        setCategorizeSplitMethod('');
+        setCorrelationMatrixImage('');
       } else {
         alert(`Error: ${data.error}`);
       }
@@ -515,6 +615,12 @@ function App() {
         setScatterCorrelation(null);
         setHistogramImage('');
         setHistogramDetails(null);
+        setCategorizeHistBefore('');
+        setCategorizeHistAfter('');
+        setCategorizeInfo(null);
+        setCategorizeProportions(null);
+        setCategorizeSplitMethod('');
+        setCorrelationMatrixImage('');
       } else {
         alert(`Error: ${data.error}`);
       }
@@ -547,6 +653,121 @@ function App() {
 
   const handlePredictChange = (column, value) => {
     setPredictValues(prev => ({ ...prev, [column]: value }));
+  };
+
+  const renderProportionTable = (label, data, categories) => {
+    const keys = (categories && categories.length ? categories : Object.keys(data || {})) || [];
+    return (
+      <div style={{ minWidth: 180 }}>
+        <h4>{label}</h4>
+        <table className="grid">
+          <thead>
+            <tr>
+              <th>Categoria</th>
+              <th>Proporcao</th>
+            </tr>
+          </thead>
+          <tbody>
+            {keys.map((k) => (
+              <tr key={k}>
+                <td>{k}</td>
+                <td>{data && data[k] !== undefined ? data[k].toFixed(3) : '0.000'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  };
+
+  const handleCategorizeSubmit = async (e) => {
+    e.preventDefault();
+    if (!categorizeColumn) {
+      alert("Selecione uma coluna para categorizar.");
+      return;
+    }
+
+    const payload = { column: categorizeColumn };
+    if (categorizeBins) {
+      payload.bins = Number(categorizeBins);
+    }
+
+    try {
+      const response = await fetch('http://localhost:5000/categorize-column', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await response.json();
+      if (response.ok) {
+        setColumns(data.columns || columns);
+        setGridData(data.preview || []);
+        setGridTitle(data.message || 'Coluna categorizada.');
+        setScatterPlotImage('');
+        setScatterCorrelation(null);
+        setCorrelationMatrixImage('');
+        setBoxplotImage('');
+        setHistogramImage('');
+        setHistogramDetails(null);
+        setHtmlContent('');
+        setCategorizeColumn('');
+        setCategorizeBins('');
+        setCategorizeHistBefore(data.hist_before ? `data:image/png;base64,${data.hist_before}` : '');
+        setCategorizeHistAfter(data.hist_after ? `data:image/png;base64,${data.hist_after}` : '');
+        setCategorizeInfo({
+          bins: data.bins,
+          newColumn: data.new_column,
+          categories: data.categories,
+          roundedColumn: data.rounded_column,
+        });
+        setCategorizeProportions(data.proportions || null);
+        setCategorizeSplitMethod(data.split_method || '');
+        closeCategorizeModal();
+        alert(data.message);
+
+        // Prompt to save the categorized dataset
+        const defaultName = 'categorized_dataset.csv';
+        const fileName = window.prompt('Digite o nome do arquivo para salvar o dataset categorizado (coluna original sera removida):', defaultName);
+        if (fileName !== null) {
+          const trimmed = (fileName || '').trim() || defaultName;
+          const finalName = trimmed.toLowerCase().endsWith('.csv') ? trimmed : `${trimmed}.csv`;
+          try {
+            const params = new URLSearchParams({
+              filename: finalName,
+              drop_original: 'true',
+              source_column: categorizeColumn,
+              target_column: categorizeInfo?.newColumn || ''
+            });
+            const downloadResponse = await fetch(`http://localhost:5000/download-categorized-dataset?${params.toString()}`);
+            if (downloadResponse.ok) {
+              const blob = await downloadResponse.blob();
+              const url = window.URL.createObjectURL(blob);
+              const link = document.createElement('a');
+              link.href = url;
+              link.download = finalName;
+              document.body.appendChild(link);
+              link.click();
+              link.remove();
+              window.URL.revokeObjectURL(url);
+            } else {
+              const errorData = await downloadResponse.json().catch(() => ({}));
+              alert(`Error downloading categorized dataset: ${errorData.error || 'Unknown error'}`);
+            }
+          } catch (downloadErr) {
+            console.error('Error downloading categorized dataset:', downloadErr);
+            alert('Ocorreu um erro ao baixar o dataset categorizado.');
+          }
+        }
+      } else {
+        alert(`Error: ${data.error}`);
+      }
+    } catch (error) {
+      console.error('Error categorizing column:', error);
+      alert('An error occurred while categorizing the column.');
+    }
   };
 
 
@@ -602,6 +823,8 @@ function App() {
         <button onClick={handleDownloadReducedDataset} disabled={columns.length === 0}>Salvar reduzido</button>
         <button onClick={openBoxplotModal} disabled={columns.length === 0}>Boxplot</button>
         <button onClick={openHistogramModal} disabled={columns.length === 0}>Histogram</button>
+        <button onClick={handleCorrelationMatrixSubmit} disabled={columns.length === 0}>Matriz Correlacao</button>
+        <button onClick={openCategorizeModal} disabled={columns.length === 0}>Categorizar coluna</button>
         <button onClick={openScatterPlotModal} disabled={columns.length === 0}>Scatter Plot</button>
         <button onClick={handleScatterPlot3dSubmit} disabled={true}>3D Scatter Plot</button>
         <button onClick={openKnnModal} disabled={columns.length === 0}>KNN (test & train)</button>
@@ -638,6 +861,12 @@ function App() {
             <img src={scatterPlotImage} alt="Scatter Plot" />
           </div>
         )}
+        {correlationMatrixImage && (
+          <div>
+            <h2>Matriz de Correlacao (scatter_matrix):</h2>
+            <img src={correlationMatrixImage} alt="Matriz de correlacao" />
+          </div>
+        )}
        {boxplotImage && (
          <div>
            <h2>Boxplot:</h2>
@@ -645,18 +874,57 @@ function App() {
          </div>
        )}
        {histogramImage && (
-         <div>
-           <h2>Histogramas:</h2>
-           {histogramDetails && (
-             <p>
-               Bins: {histogramDetails.bins ?? '-'} | Figsize: (
-               {histogramDetails.figsize ? histogramDetails.figsize[0] : '-'} x {histogramDetails.figsize ? histogramDetails.figsize[1] : '-'}
-               ) | Colunas: {histogramDetails.columns ? histogramDetails.columns.length : '-'}
-             </p>
-           )}
-           <img src={histogramImage} alt="Histogram" />
-         </div>
-       )}
+          <div>
+            <h2>Histogramas:</h2>
+            {histogramDetails && (
+              <p>
+                Bins: {histogramDetails.bins ?? '-'} | Figsize: (
+                {histogramDetails.figsize ? histogramDetails.figsize[0] : '-'} x {histogramDetails.figsize ? histogramDetails.figsize[1] : '-'}
+                ) | Colunas: {histogramDetails.columns ? histogramDetails.columns.length : '-'}
+              </p>
+            )}
+            <img src={histogramImage} alt="Histogram" />
+          </div>
+        )}
+        {categorizeHistBefore && categorizeHistAfter && (
+          <div style={{ marginTop: '1rem' }}>
+            <h2>Histogramas (antes e apos categorizar):</h2>
+            {categorizeInfo && (
+              <p>
+                Bins usados: {categorizeInfo.bins ?? '-'} | Nova coluna (categorias): {categorizeInfo.newColumn || '-'} | Coluna arredondada: {categorizeInfo.roundedColumn || '-'} | Categorias: {categorizeInfo.categories ? categorizeInfo.categories.length : 0}
+              </p>
+            )}
+            <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+              <div>
+                <h4>Antes</h4>
+                <img src={categorizeHistBefore} alt="Histograma antes da categorizacao" style={{ maxWidth: '320px' }} />
+              </div>
+              <div>
+                <h4>Depois</h4>
+                <img src={categorizeHistAfter} alt="Histograma apos categorizacao" style={{ maxWidth: '320px' }} />
+              </div>
+            </div>
+            {categorizeProportions && (
+              <div style={{ marginTop: '12px' }}>
+                <h3>Proporcoes estratificadas (StratifiedShuffleSplit)</h3>
+                <p>
+                  Tamanhos - Train: {categorizeProportions.sizes?.train ?? '-'} | Test: {categorizeProportions.sizes?.test ?? '-'} | Full: {categorizeProportions.sizes?.full ?? '-'}
+                  {categorizeSplitMethod && ` | Metodo: ${categorizeSplitMethod}`}
+                </p>
+                <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                  {renderProportionTable('Train', categorizeProportions.train, categorizeInfo?.categories)}
+                  {renderProportionTable('Test', categorizeProportions.test, categorizeInfo?.categories)}
+                  {renderProportionTable('Full', categorizeProportions.full, categorizeInfo?.categories)}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+        {gridData.length > 0 && gridTitle.includes('bucketized') && (
+          <div style={{ marginTop: '1rem' }}>
+            <p><strong>{gridTitle}</strong></p>
+          </div>
+        )}
         {htmlContent && (
            <div dangerouslySetInnerHTML={{ __html: htmlContent }} />
         )}
@@ -746,6 +1014,40 @@ function App() {
         <p>Gerar histogramas para todas as colunas numericas usando pandas DataFrame.hist.</p>
         <p>As configuracoes de bins e tamanho da figura sao ajustadas automaticamente pelo backend.</p>
         <button onClick={handleHistogramSubmit}>Gerar histogramas</button>
+      </Modal>
+
+      <Modal
+        isOpen={categorizeModalOpen}
+        onClose={closeCategorizeModal}
+        title="Categorizar coluna"
+      >
+        <form onSubmit={handleCategorizeSubmit}>
+          <div className="form-group">
+            <label>Selecione a coluna:</label>
+            <select
+              value={categorizeColumn}
+              onChange={(e) => setCategorizeColumn(e.target.value)}
+              required
+            >
+              <option value="">Selecione</option>
+              {columns.map((col) => (
+                <option key={col} value={col}>{col}</option>
+              ))}
+            </select>
+          </div>
+          <div className="form-group">
+            <label>Bins (opcional):</label>
+            <input
+              type="number"
+              min="2"
+              max="20"
+              placeholder="Auto"
+              value={categorizeBins}
+              onChange={(e) => setCategorizeBins(e.target.value)}
+            />
+          </div>
+          <button type="submit" disabled={!categorizeColumn}>Criar coluna categorizada</button>
+        </form>
       </Modal>
 
       {knnModalOpen && (

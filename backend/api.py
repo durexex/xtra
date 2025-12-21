@@ -9,12 +9,14 @@ from mpl_toolkits.mplot3d import Axes3D
 import io
 import base64
 from sklearn import *
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, StratifiedShuffleSplit
 from sklearn.neighbors import KNeighborsClassifier 
 from sklearn.metrics import accuracy_score, classification_report
 import missingno as msno
 import seaborn as sns
 import math
+import numpy as np
+from pandas.plotting import scatter_matrix
 
 # Use a non-interactive backend for matplotlib
 plt.switch_backend('Agg')
@@ -370,6 +372,235 @@ def get_histogram():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+
+@app.route('/correlation-matrix', methods=['GET'])
+def get_correlation_matrix():
+    """
+    Generate a scatter matrix for all numeric columns to visualize pairwise correlations.
+    """
+    if df is None:
+        return jsonify({'error': 'No dataframe loaded'}), 400
+
+    numeric_df = df.select_dtypes(include=['number'])
+    if numeric_df.empty:
+        return jsonify({'error': 'No numeric columns available for correlation matrix'}), 400
+
+    try:
+        # Clean and guard against inf/nan-only frames
+        safe_df = numeric_df.replace([np.inf, -np.inf], np.nan).dropna()
+        if safe_df.empty:
+            return jsonify({'error': 'No numeric rows available for correlation matrix after cleaning'}), 400
+
+        # Limit size if extremely wide to avoid huge plots
+        max_cols = min(10, safe_df.shape[1])
+        plot_df = safe_df.iloc[:, :max_cols]
+
+        axes = scatter_matrix(plot_df, figsize=(min(16, 3 * max_cols), min(16, 3 * max_cols)), diagonal='hist')
+        plt.tight_layout()
+        fig = axes[0, 0].figure if hasattr(axes, '__getitem__') else plt.gcf()
+
+        buf = io.BytesIO()
+        fig.savefig(buf, format='png')
+        buf.seek(0)
+        image_base64 = base64.b64encode(buf.getvalue()).decode('utf-8')
+        buf.close()
+        plt.close(fig)
+
+        return jsonify({
+            'image': image_base64,
+            'columns_used': list(plot_df.columns)
+        }), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/categorize-column', methods=['POST'])
+def categorize_column():
+    """
+    Solicita a coluna a ser categorizada, aplica ceil/1.5, cap superior via where,
+    categoriza com pd.cut, faz split estratificado e envia histogramas/proporcoes.
+    Ao final remove a coluna original, mantendo apenas a nova, e pode salvar em CSV.
+    """
+    global df
+    if df is None:
+        return jsonify({'error': 'No dataframe loaded'}), 400
+
+    data = request.get_json(silent=True) or {}
+    column = data.get('column')
+    bins_param = data.get('bins')
+    new_col = data.get('new_column') if column else None
+    save_dir = data.get('save_dir') or data.get('save_path')
+    save_name = data.get('save_name') or data.get('filename')
+
+    if not column:
+        return jsonify({
+            'error': 'Informe a coluna a ser categorizada em "column".',
+            'available_columns': list(df.columns)
+        }), 400
+    if column not in df.columns:
+        return jsonify({
+            'error': f'Column {column} not found in dataframe.',
+            'available_columns': list(df.columns)
+        }), 400
+
+    numeric_series = pd.to_numeric(df[column], errors='coerce')
+    original_values = numeric_series.dropna()
+    if original_values.empty:
+        return jsonify({'error': 'Selected column has no numeric values to categorize'}), 400
+
+    if bins_param is None:
+        bins_estimate = int(math.sqrt(len(original_values))) if len(original_values) > 0 else 3
+        bins = max(3, min(20, bins_estimate))
+    else:
+        try:
+            bins = int(bins_param)
+            if bins < 2:
+                return jsonify({'error': 'O numero de bins deve ser pelo menos 2.'}), 400
+        except (TypeError, ValueError):
+            return jsonify({'error': 'Forneca um numero inteiro em "bins" para definir a categorizacao.'}), 400
+
+    # Histograma da coluna original
+    fig_original = plt.figure()
+    original_values.plot.hist(bins=min(max(3, bins), 50), alpha=0.7)
+    plt.title(f'{column} - Histograma original')
+    plt.xlabel(column)
+    plt.ylabel('Frequencia')
+    buf_original = io.BytesIO()
+    fig_original.savefig(buf_original, format='png')
+    buf_original.seek(0)
+    hist_original_b64 = base64.b64encode(buf_original.getvalue()).decode('utf-8')
+    buf_original.close()
+    plt.close(fig_original)
+
+    # Ceil/1.5 e cap superior usando where
+    rounded_series = np.ceil(numeric_series / 1.5)
+    valid_rounded = rounded_series.dropna()
+    if valid_rounded.empty:
+        return jsonify({'error': 'Selected column has no numeric values to categorize'}), 400
+
+    min_val = valid_rounded.min()
+    max_val = valid_rounded.max()
+    if min_val == max_val:
+        return jsonify({'error': 'All numeric values are identical after ceil/1.5; cannot create bins.'}), 400
+
+    bin_edges = np.linspace(min_val, max_val, bins + 1)
+    cap_value = bin_edges[-1]
+    capped_series = rounded_series.where(rounded_series <= cap_value, cap_value)
+
+    # Categorizar com pd.cut gerando codigos numericos (labels=False)
+    try:
+        cut_codes = pd.cut(
+            capped_series.dropna(),
+            bins=bin_edges,
+            include_lowest=True,
+            labels=False,
+            duplicates='drop'
+        )
+    except ValueError as cut_err:
+        return jsonify({'error': f'Nao foi possivel categorizar com os bins informados: {cut_err}'}), 400
+
+    if cut_codes.dropna().empty:
+        return jsonify({'error': 'Os bins escolhidos nao geraram categorias validas.'}), 400
+
+    new_col_name = new_col or f"{column}_category"
+    categorized = pd.Series(pd.NA, index=df.index, dtype="Int64")
+    categorized.loc[cut_codes.index] = cut_codes.astype("Int64")
+    df[new_col_name] = categorized
+
+    interval_index = pd.IntervalIndex.from_breaks(bin_edges, closed='right')
+    categories = [str(interval) for interval in interval_index]
+    category_mapping = {int(idx): str(interval) for idx, interval in enumerate(interval_index)}
+
+    # Histograma da nova coluna categorizada
+    fig_new = plt.figure(figsize=(8, 4.5))
+    categorized.value_counts().sort_index().plot.bar()
+    plt.title(f'{new_col_name} - Histograma categorizado')
+    plt.xlabel('Bin (codigo numerico)')
+    plt.ylabel('Quantidade')
+    plt.xticks(rotation=45, ha='right')
+    plt.tight_layout()
+    buf_new = io.BytesIO()
+    fig_new.savefig(buf_new, format='png')
+    buf_new.seek(0)
+    hist_new_b64 = base64.b64encode(buf_new.getvalue()).decode('utf-8')
+    buf_new.close()
+    plt.close(fig_new)
+
+    # Split estratificado conforme solicitado
+    splitter = StratifiedShuffleSplit(n_splits=1, test_size=0.2, random_state=42)
+    try:
+        train_index, test_index = next(splitter.split(df, df[new_col_name]))
+        strat_train_set = df.loc[train_index]
+        strat_test_set = df.loc[test_index]
+    except ValueError as split_err:
+        return jsonify({'error': f'Nao foi possivel criar o split estratificado: {split_err}'}), 400
+
+    def _proportions(target_df):
+        counts = target_df[new_col_name].value_counts()
+        denom = len(target_df) if len(target_df) > 0 else 1
+        proportions_raw = counts / denom
+        # Map codigo numerico -> intervalo legivel para exibir na tabela
+        return {category_mapping.get(int(idx), str(idx)): float(val) for idx, val in proportions_raw.items()}
+
+    proportions = {
+        'train': _proportions(strat_train_set),
+        'test': _proportions(strat_test_set),
+        'full': _proportions(df),
+        'sizes': {
+            'train': int(len(strat_train_set)),
+            'test': int(len(strat_test_set)),
+            'full': int(len(df))
+        }
+    }
+
+    # Remover coluna original e manter somente a nova
+    df.drop(columns=[column], inplace=True)
+    preview = df.head(50).to_dict(orient='records')
+
+    # Solicitar nome/local de gravacao da nova base CSV
+    saved_to = None
+    save_prompt = None
+    if save_dir and save_name:
+        filename = save_name if str(save_name).lower().endswith('.csv') else f"{save_name}.csv"
+        try:
+            os.makedirs(save_dir, exist_ok=True)
+            output_path = os.path.join(save_dir, filename)
+            df.to_csv(output_path, index=False)
+            saved_to = output_path
+        except Exception as save_err:
+            save_prompt = f'Falha ao salvar CSV: {save_err}'
+    else:
+        save_prompt = 'Forneca "save_dir" (pasta) e "save_name" (nome do arquivo .csv) para salvar a nova base.'
+
+    return jsonify({
+        'message': f'Coluna {column} categorizada em {new_col_name} com ceil/1.5 e {bins} bins (valores acima do bin capados).',
+        'new_column': new_col_name,
+        'bins': int(bins),
+        'hist_original': hist_original_b64,  # para comparacao no front
+        'hist_new': hist_new_b64,
+        'hist_before': hist_original_b64,    # compatibilidade com front atual
+        'hist_after': hist_new_b64,
+        'histograms': {  # bloco explicito para comparacao
+            'original': hist_original_b64,
+            'new': hist_new_b64
+        },
+        'proportions': proportions,
+        'proportions_detail': {
+            'column': new_col_name,
+            'train': proportions['train'],
+            'test': proportions['test'],
+            'full': proportions['full']
+        },
+        'categories': categories,
+        'category_mapping': category_mapping,
+        'rounded_column': None,
+        'split_method': 'stratified',
+        'preview': preview,
+        'columns': list(df.columns),
+        'saved_to': saved_to,
+        'save_prompt': save_prompt
+    }), 200
+
 @app.route('/scatterplot3d', methods=['GET'])
 def get_scatterplot3d():
     if df is None:
@@ -556,6 +787,39 @@ def download_fixed_dataset():
         )
     except Exception as e:
         return jsonify({'error': f'Failed to generate fixed dataset: {str(e)}'}), 500
+
+
+@app.route('/download-categorized-dataset', methods=['GET'])
+def download_categorized_dataset():
+    if df is None:
+        return jsonify({'error': 'No dataframe loaded'}), 400
+
+    filename = request.args.get('filename', 'categorized_dataset.csv')
+    drop_original = request.args.get('drop_original', 'false').lower() == 'true'
+    source_column = request.args.get('source_column')
+    target_column = request.args.get('target_column')
+
+    safe_filename = re.sub(r'[^A-Za-z0-9._-]', '_', filename) or 'categorized_dataset.csv'
+    if not safe_filename.lower().endswith('.csv'):
+        safe_filename += '.csv'
+
+    try:
+        export_df = df.copy()
+        if drop_original and source_column and target_column:
+            # Drop the original column if target exists to preserve categorized view
+            if source_column in export_df.columns and target_column in export_df.columns:
+                export_df = export_df.drop(columns=[source_column])
+
+        csv_buffer = io.StringIO()
+        export_df.to_csv(csv_buffer, index=False)
+        csv_buffer.seek(0)
+        return Response(
+            csv_buffer.getvalue(),
+            mimetype='text/csv',
+            headers={'Content-Disposition': f'attachment; filename={safe_filename}'}
+        )
+    except Exception as e:
+        return jsonify({'error': f'Failed to generate categorized dataset: {str(e)}'}), 500
 
 
 if __name__ == '__main__':
