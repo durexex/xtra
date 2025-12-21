@@ -227,17 +227,7 @@ def download_reduced_dataset():
         drop_columns = [col for col in drop_param.split(',') if col]
     elif drop_columns_list:
         drop_columns = drop_columns_list
-    else:
-        drop_columns = [
-            'Biopsy',
-            'Cytology',  # keep spelling variant
-            'Citology',  # dataset original spelling
-            'Dx',
-            'IUD (years)',
-            'IUD: years',
-            'STDs'
-        ]
-
+    
     try:
         reduced_df = df.drop(columns=drop_columns, errors='ignore')
         csv_buffer = io.StringIO()

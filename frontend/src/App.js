@@ -904,104 +904,108 @@ function App() {
         <button onClick={openKnnModal} disabled={columns.length === 0}>KNN (test & train)</button>
       </div>
       <div className="content">
-        <h1>Dashboard</h1>
-        {gridData.length > 0 && (
-          <div className="table-container">
-            <h2>{gridTitle}</h2>
-            <table className="grid">
-              <thead>
-                <tr>
-                  {Object.keys(gridData[0]).map((key) => (
-                    <th key={key}>{key}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {gridData.map((row, index) => (
-                  <tr key={index}>
-                    {Object.values(row).map((val, i) => (
-                      <td key={i}>{val}</td>
+        <div className="page-shell">
+          <div className="page-card">
+            <h1>Dashboard</h1>
+            {gridData.length > 0 && (
+              <div className="table-container">
+                <h2>{gridTitle}</h2>
+                <table className="grid">
+                  <thead>
+                    <tr>
+                      {Object.keys(gridData[0]).map((key) => (
+                        <th key={key}>{key}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {gridData.map((row, index) => (
+                      <tr key={index}>
+                        {Object.values(row).map((val, i) => (
+                          <td key={i}>{val}</td>
+                        ))}
+                      </tr>
                     ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-        {scatterPlotImage && (
-          <div>
-            <h2>Scatter Plot:</h2>
-            <p>Correlacao (pandas corr): {scatterCorrelation === null ? 'N/A' : scatterCorrelation.toFixed(4)}</p>
-            <img src={scatterPlotImage} alt="Scatter Plot" />
-          </div>
-        )}
-        {correlationMatrixImage && (
-          <div>
-            <h2>Matriz de Correlacao (scatter_matrix):</h2>
-            <img src={correlationMatrixImage} alt="Matriz de correlacao" />
-          </div>
-        )}
-       {boxplotImage && (
-         <div>
-           <h2>Boxplot:</h2>
-           <img src={boxplotImage} alt="Boxplot" />
-         </div>
-       )}
-       {histogramImage && (
-          <div>
-            <h2>Histogramas:</h2>
-            {histogramDetails && (
-              <p>
-                Bins: {histogramDetails.bins ?? '-'} | Figsize: (
-                {histogramDetails.figsize ? histogramDetails.figsize[0] : '-'} x {histogramDetails.figsize ? histogramDetails.figsize[1] : '-'}
-                ) | Colunas: {histogramDetails.columns ? histogramDetails.columns.length : '-'}
-              </p>
-            )}
-            <img src={histogramImage} alt="Histogram" />
-          </div>
-        )}
-        {categorizeHistBefore && categorizeHistAfter && (
-          <div style={{ marginTop: '1rem' }}>
-            <h2>Histogramas (antes e apos categorizar):</h2>
-            {categorizeInfo && (
-              <p>
-                Bins usados: {categorizeInfo.bins ?? '-'} | Nova coluna (categorias): {categorizeInfo.newColumn || '-'} | Coluna arredondada: {categorizeInfo.roundedColumn || '-'} | Categorias: {categorizeInfo.categories ? categorizeInfo.categories.length : 0}
-              </p>
-            )}
-            <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-              <div>
-                <h4>Antes</h4>
-                <img src={categorizeHistBefore} alt="Histograma antes da categorizacao" style={{ maxWidth: '320px' }} />
+                  </tbody>
+                </table>
               </div>
+            )}
+            {scatterPlotImage && (
               <div>
-                <h4>Depois</h4>
-                <img src={categorizeHistAfter} alt="Histograma apos categorizacao" style={{ maxWidth: '320px' }} />
+                <h2>Scatter Plot:</h2>
+                <p>Correlacao (pandas corr): {scatterCorrelation === null ? 'N/A' : scatterCorrelation.toFixed(4)}</p>
+                <img src={scatterPlotImage} alt="Scatter Plot" />
               </div>
-            </div>
-            {categorizeProportions && (
-              <div style={{ marginTop: '12px' }}>
-                <h3>Proporcoes estratificadas (StratifiedShuffleSplit)</h3>
-                <p>
-                  Tamanhos - Train: {categorizeProportions.sizes?.train ?? '-'} | Test: {categorizeProportions.sizes?.test ?? '-'} | Full: {categorizeProportions.sizes?.full ?? '-'}
-                  {categorizeSplitMethod && ` | Metodo: ${categorizeSplitMethod}`}
-                </p>
+            )}
+            {correlationMatrixImage && (
+              <div>
+                <h2>Matriz de Correlacao (scatter_matrix):</h2>
+                <img src={correlationMatrixImage} alt="Matriz de correlacao" />
+              </div>
+            )}
+           {boxplotImage && (
+             <div>
+               <h2>Boxplot:</h2>
+               <img src={boxplotImage} alt="Boxplot" />
+             </div>
+           )}
+           {histogramImage && (
+              <div>
+                <h2>Histogramas:</h2>
+                {histogramDetails && (
+                  <p>
+                    Bins: {histogramDetails.bins ?? '-'} | Figsize: (
+                    {histogramDetails.figsize ? histogramDetails.figsize[0] : '-'} x {histogramDetails.figsize ? histogramDetails.figsize[1] : '-'}
+                    ) | Colunas: {histogramDetails.columns ? histogramDetails.columns.length : '-'}
+                  </p>
+                )}
+                <img src={histogramImage} alt="Histogram" />
+              </div>
+            )}
+            {categorizeHistBefore && categorizeHistAfter && (
+              <div style={{ marginTop: '1rem' }}>
+                <h2>Histogramas (antes e apos categorizar):</h2>
+                {categorizeInfo && (
+                  <p>
+                    Bins usados: {categorizeInfo.bins ?? '-'} | Nova coluna (categorias): {categorizeInfo.newColumn || '-'} | Coluna arredondada: {categorizeInfo.roundedColumn || '-'} | Categorias: {categorizeInfo.categories ? categorizeInfo.categories.length : 0}
+                  </p>
+                )}
                 <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-                  {renderProportionTable('Train', categorizeProportions.train, categorizeInfo?.categories)}
-                  {renderProportionTable('Test', categorizeProportions.test, categorizeInfo?.categories)}
-                  {renderProportionTable('Full', categorizeProportions.full, categorizeInfo?.categories)}
+                  <div>
+                    <h4>Antes</h4>
+                    <img src={categorizeHistBefore} alt="Histograma antes da categorizacao" style={{ maxWidth: '320px' }} />
+                  </div>
+                  <div>
+                    <h4>Depois</h4>
+                    <img src={categorizeHistAfter} alt="Histograma apos categorizacao" style={{ maxWidth: '320px' }} />
+                  </div>
                 </div>
+                {categorizeProportions && (
+                  <div style={{ marginTop: '12px' }}>
+                    <h3>Proporcoes estratificadas (StratifiedShuffleSplit)</h3>
+                    <p>
+                      Tamanhos - Train: {categorizeProportions.sizes?.train ?? '-'} | Test: {categorizeProportions.sizes?.test ?? '-'} | Full: {categorizeProportions.sizes?.full ?? '-'}
+                      {categorizeSplitMethod && ` | Metodo: ${categorizeSplitMethod}`}
+                    </p>
+                    <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                      {renderProportionTable('Train', categorizeProportions.train, categorizeInfo?.categories)}
+                      {renderProportionTable('Test', categorizeProportions.test, categorizeInfo?.categories)}
+                      {renderProportionTable('Full', categorizeProportions.full, categorizeInfo?.categories)}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
+            {gridData.length > 0 && gridTitle.includes('bucketized') && (
+              <div style={{ marginTop: '1rem' }}>
+                <p><strong>{gridTitle}</strong></p>
+              </div>
+            )}
+            {htmlContent && (
+               <div dangerouslySetInnerHTML={{ __html: htmlContent }} />
+            )}
           </div>
-        )}
-        {gridData.length > 0 && gridTitle.includes('bucketized') && (
-          <div style={{ marginTop: '1rem' }}>
-            <p><strong>{gridTitle}</strong></p>
-          </div>
-        )}
-        {htmlContent && (
-           <div dangerouslySetInnerHTML={{ __html: htmlContent }} />
-        )}
+        </div>
       </div>
 
       {modalOpen && (
