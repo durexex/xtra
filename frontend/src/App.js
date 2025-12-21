@@ -40,6 +40,7 @@ function App() {
   const [customNullValues, setCustomNullValues] = useState([]);
   const [currentCustomNullValue, setCurrentCustomNullValue] = useState('');
   const [selectedColumnsForNullCheck, setSelectedColumnsForNullCheck] = useState({});
+  const [fixStrategy, setFixStrategy] = useState('median');
 
   const [infoModalOpen, setInfoModalOpen] = useState(false);
   const [infoData, setInfoData] = useState(null);
@@ -48,6 +49,10 @@ function App() {
   const [fixModalOpen, setFixModalOpen] = useState(false);
   const [fixingDataset, setFixingDataset] = useState(false);
   const [fixMessage, setFixMessage] = useState('');
+  const [convertModalOpen, setConvertModalOpen] = useState(false);
+  const [selectedColumnsForConvert, setSelectedColumnsForConvert] = useState({});
+  const [reducedModalOpen, setReducedModalOpen] = useState(false);
+  const [selectedColumnsForReduced, setSelectedColumnsForReduced] = useState({});
 
   const handleFileChange = (e) => {
     setFile(e.target.files[0]);
@@ -120,6 +125,21 @@ function App() {
     setInfoModalOpen(false);
     setInfoLoading(false);
   };
+  const openConvertModal = () => {
+    const allColumns = columns.reduce((acc, col) => {
+      acc[col] = true;
+      return acc;
+    }, {});
+    setSelectedColumnsForConvert(allColumns);
+    setConvertModalOpen(true);
+  };
+  const closeConvertModal = () => setConvertModalOpen(false);
+  const openReducedModal = () => {
+    const noneSelected = {};
+    setSelectedColumnsForReduced(noneSelected);
+    setReducedModalOpen(true);
+  };
+  const closeReducedModal = () => setReducedModalOpen(false);
 
   const fetchHead = async () => {
     try {
@@ -198,6 +218,38 @@ function App() {
     setCustomNullValues([]);
   };
 
+  const handleConvertCheckboxChange = (e) => {
+    const { name, checked } = e.target;
+    setSelectedColumnsForConvert(prev => ({
+      ...prev,
+      [name]: checked,
+    }));
+  };
+
+  const handleConvertSelectAll = (checked) => {
+    const allColumns = columns.reduce((acc, col) => {
+      acc[col] = checked;
+      return acc;
+    }, {});
+    setSelectedColumnsForConvert(allColumns);
+  };
+
+  const handleReducedCheckboxChange = (e) => {
+    const { name, checked } = e.target;
+    setSelectedColumnsForReduced(prev => ({
+      ...prev,
+      [name]: checked,
+    }));
+  };
+
+  const handleReducedSelectAll = (checked) => {
+    const allColumns = columns.reduce((acc, col) => {
+      acc[col] = checked;
+      return acc;
+    }, {});
+    setSelectedColumnsForReduced(allColumns);
+  };
+
   const handleCheckboxChange = (event) => {
     const { name, checked } = event.target;
     setSelectedColumnsForNullCheck(prevState => ({
@@ -266,7 +318,7 @@ function App() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ custom_null_values: customNullValues, columns_to_fix: selectedColumns }),
+        body: JSON.stringify({ custom_null_values: customNullValues, columns_to_fix: selectedColumns, strategy: fixStrategy }),
       });
       const data = await response.json();
       if (response.ok) {
@@ -334,14 +386,26 @@ function App() {
       alert("Please upload a dataset first.");
       return;
     }
+
+    const selectedColumns = Object.keys(selectedColumnsForConvert).filter(col => selectedColumnsForConvert[col]);
+    if (selectedColumns.length === 0) {
+      alert("Selecione ao menos uma coluna para converter.");
+      return;
+    }
+
     setFixingDataset(true);
     try {
-      const response = await fetch('http://localhost:5000/fix-dataset', { method: 'POST' });
+      const response = await fetch('http://localhost:5000/fix-dataset', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ columns: selectedColumns })
+      });
       const data = await response.json();
       if (response.ok) {
         setColumns(data.columns || columns);
         setFixMessage(data.message || 'Dataset fixed successfully.');
         setFixModalOpen(true);
+        closeConvertModal();
         setGridData([]);
         setGridTitle('');
         setScatterPlotImage('');
@@ -777,6 +841,12 @@ function App() {
       alert("Please upload a dataset first.");
       return;
     }
+    const columnsToDrop = Object.keys(selectedColumnsForReduced).filter(col => selectedColumnsForReduced[col]);
+    if (columnsToDrop.length === 0) {
+      alert('Selecione ao menos uma coluna para excluir.');
+      return;
+    }
+
     const defaultName = 'dataset_reduced.csv';
     const fileName = window.prompt('Digite o nome do arquivo para salvar (sugerido: dataset_reduced.csv):', defaultName);
     if (fileName === null) {
@@ -786,7 +856,10 @@ function App() {
     const finalName = trimmed.toLowerCase().endsWith('.csv') ? trimmed : `${trimmed}.csv`;
 
     try {
-      const response = await fetch(`http://localhost:5000/download-reduced-dataset?filename=${encodeURIComponent(finalName)}`);
+      const params = new URLSearchParams();
+      params.append('filename', finalName);
+      params.append('drop_columns', columnsToDrop.join(','));
+      const response = await fetch(`http://localhost:5000/download-reduced-dataset?${params.toString()}`);
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
         alert(`Error: ${errorData.error || 'Failed to download reduced dataset.'}`);
@@ -801,6 +874,7 @@ function App() {
       link.click();
       link.remove();
       window.URL.revokeObjectURL(url);
+      closeReducedModal();
     } catch (error) {
       console.error('Error downloading reduced dataset:', error);
       alert('An error occurred while downloading the reduced dataset.');
@@ -817,10 +891,10 @@ function App() {
         <button onClick={openGroupByModal} disabled={columns.length === 0}>Group By</button>
         <button onClick={openNullValuesModal} disabled={columns.length === 0}>Valores Nulos</button>
         <button onClick={fetchDataframeInfo} disabled={columns.length === 0}>Dataframe Info</button>
-        <button onClick={handleFixDataset} disabled={columns.length === 0 || fixingDataset}>
-          {fixingDataset ? 'Fixing...' : 'Fix dataset'}
+        <button onClick={openConvertModal} disabled={columns.length === 0 || fixingDataset}>
+          {fixingDataset ? 'Convertendo...' : 'Converter str em num'}
         </button>
-        <button onClick={handleDownloadReducedDataset} disabled={columns.length === 0}>Salvar reduzido</button>
+        <button onClick={openReducedModal} disabled={columns.length === 0}>Salvar reduzido</button>
         <button onClick={openBoxplotModal} disabled={columns.length === 0}>Boxplot</button>
         <button onClick={openHistogramModal} disabled={columns.length === 0}>Histogram</button>
         <button onClick={handleCorrelationMatrixSubmit} disabled={columns.length === 0}>Matriz Correlacao</button>
@@ -948,14 +1022,23 @@ function App() {
           <div className="modal-content">
             <span className="close" onClick={closeGroupByModal}>&times;</span>
             <h2>Group By Column</h2>
-            <form onSubmit={handleGroupBySubmit}>
-              <select onChange={(e) => setSelectedColumn(e.target.value)} value={selectedColumn}>
-                <option value="">Select a column</option>
+            <form onSubmit={handleGroupBySubmit} className="modal-body">
+              <label className="form-label">Escolha a coluna para agrupar</label>
+              <select
+                className="select-styled"
+                onChange={(e) => setSelectedColumn(e.target.value)}
+                value={selectedColumn}
+                required
+              >
+                <option value="">Selecione uma coluna</option>
                 {columns.map((col, index) => (
                   <option key={index} value={col}>{col}</option>
                 ))}
               </select>
-              <button type="submit">Group and Describe</button>
+              <div className="modal-actions">
+                <button type="button" className="btn-ghost" onClick={closeGroupByModal}>Cancelar</button>
+                <button type="submit" className="btn-cta">Group and Describe</button>
+              </div>
             </form>
           </div>
         </div>
@@ -965,14 +1048,15 @@ function App() {
         isOpen={scatterPlotModalOpen}
         onClose={closeScatterPlotModal}
         title="Scatter Plot"
+        contentClassName="null-modal"
       >
         <form onSubmit={(e) => {
           e.preventDefault();
           handleScatterPlotSubmit(scatterX, scatterY);
-        }}>
+        }} className="modal-body">
           <div className="form-group">
-            <label>Select X-axis:</label>
-            <select onChange={(e) => setScatterX(e.target.value)} value={scatterX} required>
+            <label className="form-label">Selecione o eixo X</label>
+            <select className="select-styled" onChange={(e) => setScatterX(e.target.value)} value={scatterX} required>
               <option value="">Select a column</option>
               {columns.map((col, index) => (
                 <option key={index} value={col}>{col}</option>
@@ -980,14 +1064,17 @@ function App() {
             </select>
           </div>
           <div className="form-group">
-            <label>Select Y-axis:</label>
+            <label className="form-label">Selecione o eixo Y</label>
             <RadioGroup
               options={columns}
               selectedOption={scatterY}
               onChange={setScatterY}
             />
           </div>
-          <button type="submit" disabled={!scatterX || !scatterY}>Generate Scatter Plot</button>
+          <div className="modal-actions">
+            <button type="button" className="btn-ghost" onClick={closeScatterPlotModal}>Cancelar</button>
+            <button type="submit" className="btn-cta" disabled={!scatterX || !scatterY}>Gerar Scatter Plot</button>
+          </div>
         </form>
       </Modal>
 
@@ -1020,11 +1107,13 @@ function App() {
         isOpen={categorizeModalOpen}
         onClose={closeCategorizeModal}
         title="Categorizar coluna"
+        contentClassName="null-modal"
       >
-        <form onSubmit={handleCategorizeSubmit}>
+        <form onSubmit={handleCategorizeSubmit} className="modal-body">
           <div className="form-group">
-            <label>Selecione a coluna:</label>
+            <label className="form-label">Selecione a coluna</label>
             <select
+              className="select-styled"
               value={categorizeColumn}
               onChange={(e) => setCategorizeColumn(e.target.value)}
               required
@@ -1036,8 +1125,9 @@ function App() {
             </select>
           </div>
           <div className="form-group">
-            <label>Bins (opcional):</label>
+            <label className="form-label">Bins (opcional)</label>
             <input
+              className="input-styled"
               type="number"
               min="2"
               max="20"
@@ -1046,50 +1136,60 @@ function App() {
               onChange={(e) => setCategorizeBins(e.target.value)}
             />
           </div>
-          <button type="submit" disabled={!categorizeColumn}>Criar coluna categorizada</button>
+          <div className="modal-actions">
+            <button type="button" className="btn-ghost" onClick={closeCategorizeModal}>Cancelar</button>
+            <button type="submit" className="btn-cta" disabled={!categorizeColumn}>Criar coluna categorizada</button>
+          </div>
         </form>
       </Modal>
 
       {knnModalOpen && (
         <div className="modal">
-          <div className="modal-content">
+          <div className="modal-content null-modal">
             <span className="close" onClick={closeKnnModal}>&times;</span>
-            <h2>Set K-Neighbors</h2>
-            <form onSubmit={handleKnnSubmit} className="knn-form">
-              <label>
-                Number of Neighbors (n_neighbors):
+            <h2>Configurar KNN</h2>
+            <form onSubmit={handleKnnSubmit} className="modal-body">
+              <div className="form-group">
+                <label className="form-label">Number of Neighbors (n_neighbors)</label>
                 <input
+                  className="input-styled"
                   type="number"
                   value={nNeighbors}
                   onChange={(e) => setNNeighbors(e.target.value)}
                   min="1"
                 />
-              </label>
-              <label>
-                Y Column:
-                <select onChange={(e) => setKnnY(e.target.value)} value={knnY}>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Y Column</label>
+                <select
+                  className="select-styled"
+                  onChange={(e) => setKnnY(e.target.value)}
+                  value={knnY}
+                  required
+                >
                   <option value="">Select a column</option>
                   {columns.map((col, index) => (
                     <option key={index} value={col}>{col}</option>
                   ))}
                 </select>
-              </label>
-              <label>
+              </div>
+              <label className="toggle">
                 <input
                   type="checkbox"
                   checked={predictAlso}
                   onChange={(e) => setPredictAlso(e.target.checked)}
                 />
-                Predict also
+                <span>Gerar tambem previsao</span>
               </label>
 
               {predictAlso && (
                 <div className="predict-values">
-                  <h3>Enter values for prediction:</h3>
+                  <h3>Valores para predicao:</h3>
                   {columns.filter(c => c !== knnY).map(col => (
                     <div key={col} className="form-group">
-                      <label>{col}:</label>
+                      <label className="form-label">{col}:</label>
                       <input
+                        className="input-styled"
                         type="number"
                         step="any"
                         value={predictValues[col] || ''}
@@ -1100,7 +1200,10 @@ function App() {
                 </div>
               )}
               
-              <button type="submit">Run KNN</button>
+              <div className="modal-actions">
+                <button type="button" className="btn-ghost" onClick={closeKnnModal}>Cancelar</button>
+                <button type="submit" className="btn-cta">Executar KNN</button>
+              </div>
             </form>
           </div>
         </div>
@@ -1110,57 +1213,191 @@ function App() {
         isOpen={nullValuesModalOpen}
         onClose={closeNullValuesModal}
         title="Custom Null Values"
+        contentClassName="null-modal"
       >
-        <div>
-          <p>Columns to be checked:</p>
-          <div className="form-group">
-            <label>
-              <input 
-                type="checkbox" 
-                onChange={(e) => {
-                  const { checked } = e.target;
-                  const allColumns = columns.reduce((acc, col) => {
-                    acc[col] = checked;
-                    return acc;
-                  }, {});
-                  setSelectedColumnsForNullCheck(allColumns);
-                }}
-              />
-              Select All
-            </label>
-          </div>
-          <div className="checkbox-group">
-            {columns.map(col => (
-              <label key={col}>
+        <div className="null-modal-body">
+          <p className="muted">Selecione as colunas e adicione marcadores de nulos customizados antes de checar/corrigir.</p>
+
+          <div className="null-section">
+            <div className="null-section__header">
+              <h4>Colunas a verificar</h4>
+              <label className="toggle">
                 <input 
                   type="checkbox" 
-                  name={col}
-                  checked={selectedColumnsForNullCheck[col] || false} 
-                  onChange={handleCheckboxChange} 
+                  onChange={(e) => {
+                    const { checked } = e.target;
+                    const allColumns = columns.reduce((acc, col) => {
+                      acc[col] = checked;
+                      return acc;
+                    }, {});
+                    setSelectedColumnsForNullCheck(allColumns);
+                  }}
                 />
-                {col}
+                <span>Selecionar todas</span>
               </label>
-            ))}
+            </div>
+            <div className="null-checkbox-grid">
+              {columns.map(col => (
+                <label key={col} className="pill-checkbox">
+                  <input 
+                    type="checkbox" 
+                    name={col}
+                    checked={selectedColumnsForNullCheck[col] || false} 
+                    onChange={handleCheckboxChange} 
+                  />
+                  <span>{col}</span>
+                </label>
+              ))}
+            </div>
           </div>
-          <div className="form-group">
-            <label>Custom Null Value:</label>
-            <input 
-              type="text" 
-              value={currentCustomNullValue} 
-              onChange={(e) => setCurrentCustomNullValue(e.target.value)} 
-            />
-            <button onClick={addCustomNullValue}>Add</button>
-            <button onClick={clearCustomNullValues}>Clear</button>
+
+          <div className="null-section">
+            <h4>Valores nulos customizados</h4>
+            <div className="null-input-row">
+              <input 
+                type="text" 
+                placeholder="Ex: 999, N/A, missing"
+                value={currentCustomNullValue} 
+                onChange={(e) => setCurrentCustomNullValue(e.target.value)} 
+              />
+              <div className="null-actions-inline">
+                <button className="btn-primary" onClick={addCustomNullValue}>Adicionar</button>
+                <button className="btn-ghost" onClick={clearCustomNullValues}>Limpar</button>
+              </div>
+            </div>
+            <div className="null-chip-list">
+              {customNullValues.length === 0 && <span className="muted">Nenhum valor customizado adicionado.</span>}
+              {customNullValues.map((val, index) => (
+                <span key={index} className="null-chip">{val}</span>
+              ))}
+            </div>
           </div>
-          <div>
-            <p>Custom Null Values List:</p>
-            <ul>
-              {customNullValues.map((val, index) => <li key={index}>{val}</li>)}
-            </ul>
+
+          <div className="null-section">
+            <h4>Como corrigir</h4>
+            <div className="null-radio-group">
+              <label className={`pill-radio ${fixStrategy === 'na' ? 'active' : ''}`}>
+                <input
+                  type="radio"
+                  name="fix-strategy"
+                  value="na"
+                  checked={fixStrategy === 'na'}
+                  onChange={(e) => setFixStrategy(e.target.value)}
+                />
+                <span>Trocar por NA</span>
+              </label>
+              <label className={`pill-radio ${fixStrategy === 'mean' ? 'active' : ''}`}>
+                <input
+                  type="radio"
+                  name="fix-strategy"
+                  value="mean"
+                  checked={fixStrategy === 'mean'}
+                  onChange={(e) => setFixStrategy(e.target.value)}
+                />
+                <span>Trocar pela media</span>
+              </label>
+              <label className={`pill-radio ${fixStrategy === 'median' ? 'active' : ''}`}>
+                <input
+                  type="radio"
+                  name="fix-strategy"
+                  value="median"
+                  checked={fixStrategy === 'median'}
+                  onChange={(e) => setFixStrategy(e.target.value)}
+                />
+                <span>Trocar pela mediana</span>
+              </label>
+            </div>
+            <p className="muted">Somente uma opcao pode ser usada por vez. Para mean/median, apenas colunas numericas recebem o preenchimento.</p>
           </div>
-          <button onClick={fetchNullValues}>Check Null Values</button>
-          <span style={{ marginRight: '10px' }}></span>
-          <button onClick={handleFixNullValues}>Corrigir Nulos</button>
+
+          <div className="null-actions">
+            <button className="btn-cta" onClick={fetchNullValues}>Checar valores nulos</button>
+            <button className="btn-ghost" onClick={handleFixNullValues}>Corrigir nulos</button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={reducedModalOpen}
+        onClose={closeReducedModal}
+        title="Salvar dataset reduzido"
+        contentClassName="null-modal"
+      >
+        <div className="modal-body">
+          <p className="muted">Selecione as colunas que deseja excluir antes de salvar.</p>
+          <div className="null-section">
+            <div className="null-section__header">
+              <h4>Colunas para excluir</h4>
+              <label className="toggle">
+                <input
+                  type="checkbox"
+                  checked={columns.length > 0 && columns.every(col => selectedColumnsForReduced[col])}
+                  onChange={(e) => handleReducedSelectAll(e.target.checked)}
+                />
+                <span>Selecionar todas</span>
+              </label>
+            </div>
+            <div className="null-checkbox-grid">
+              {columns.map(col => (
+                <label key={col} className="pill-checkbox">
+                  <input
+                    type="checkbox"
+                    name={col}
+                    checked={selectedColumnsForReduced[col] || false}
+                    onChange={handleReducedCheckboxChange}
+                  />
+                  <span>{col}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+          <div className="null-actions">
+            <button className="btn-ghost" onClick={closeReducedModal}>Cancelar</button>
+            <button className="btn-cta" onClick={handleDownloadReducedDataset}>Gerar CSV reduzido</button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={convertModalOpen}
+        onClose={closeConvertModal}
+        title="Converter str em num"
+        contentClassName="null-modal"
+      >
+        <div className="modal-body">
+          <p className="muted">Selecione as colunas (objetos) que deseja tentar converter para numerico (Int64).</p>
+          <div className="null-section">
+            <div className="null-section__header">
+              <h4>Colunas para converter</h4>
+              <label className="toggle">
+                <input
+                  type="checkbox"
+                  checked={columns.length > 0 && columns.every(col => selectedColumnsForConvert[col])}
+                  onChange={(e) => handleConvertSelectAll(e.target.checked)}
+                />
+                <span>Selecionar todas</span>
+              </label>
+            </div>
+            <div className="null-checkbox-grid">
+              {columns.map(col => (
+                <label key={col} className="pill-checkbox">
+                  <input
+                    type="checkbox"
+                    name={col}
+                    checked={selectedColumnsForConvert[col] || false}
+                    onChange={handleConvertCheckboxChange}
+                  />
+                  <span>{col}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+          <div className="null-actions">
+            <button className="btn-ghost" onClick={closeConvertModal}>Cancelar</button>
+            <button className="btn-cta" onClick={handleFixDataset} disabled={fixingDataset}>
+              {fixingDataset ? 'Convertendo...' : 'Converter selecionadas'}
+            </button>
+          </div>
         </div>
       </Modal>
 

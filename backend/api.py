@@ -125,7 +125,9 @@ def get_null_values():
             custom_null_values = data.get('custom_null_values', [])
             columns_to_check = data.get('columns_to_check')
 
-    all_missing_tokens = MISSING_VALUE_TOKENS + custom_null_values
+    # Include common textual null markers beyond default missing tokens
+    extra_null_tokens = ["NA", "Na", "na", "N/A", "n/a", "NULL", "Null", "null", "None", "none"]
+    all_missing_tokens = list(dict.fromkeys(MISSING_VALUE_TOKENS + extra_null_tokens + custom_null_values))
     
     # Create a temporary DataFrame for null value checking
     df_temp = df.copy() # Work on a copy to avoid side effects
@@ -164,30 +166,41 @@ def get_null_values():
 @app.route('/fix-dataset', methods=['POST'])
 def fix_dataset():
     """
-    Normalize dataset by replacing known missing tokens and coercing object columns to Int64.
+    Normalize dataset by coercing selected object columns to Int64.
     """
     global df
     if df is None:
         return jsonify({'error': 'No dataframe loaded'}), 400
+    data = request.get_json(silent=True) or {}
+    requested_columns = data.get('columns')
 
     try:
         fixed_df = df.copy()
-        fixed_df = fixed_df.replace(MISSING_VALUE_TOKENS, pd.NA)
 
-        # Force object columns into integer form (nullable) after coercing/rounding numerics
-        for col in fixed_df.select_dtypes(include=['object']).columns:
-            numeric_col = pd.to_numeric(fixed_df[col], errors='coerce')
-            numeric_col = numeric_col.apply(lambda v: pd.NA if pd.isna(v) else int(round(v)))
-            fixed_df[col] = pd.array(numeric_col, dtype='Int64')
+        if requested_columns and isinstance(requested_columns, list):
+            target_cols = [col for col in requested_columns if col in fixed_df.columns]
+            if not target_cols:
+                return jsonify({'error': 'Nenhuma das colunas informadas existe no dataset.'}), 400
+        else:
+            target_cols = list(fixed_df.select_dtypes(include=['object']).columns)
+
+        coerced_cols = []
+        for col in target_cols:
+            if col in fixed_df.columns and pd.api.types.is_object_dtype(fixed_df[col]):
+                numeric_col = pd.to_numeric(fixed_df[col], errors='coerce')
+                numeric_col = numeric_col.apply(lambda v: pd.NA if pd.isna(v) else int(round(v)))
+                fixed_df[col] = pd.array(numeric_col, dtype='Int64')
+                coerced_cols.append(col)
 
         df = fixed_df
         metadata = _build_dataframe_info(df)
 
         return jsonify({
-            'message': 'Dataset cleaned. Missing tokens replaced and object columns cast to Int64.',
+            'message': 'Dataset cleaned. Object columns cast to Int64.',
             'columns': list(df.columns),
             'dtypes': metadata.get('dtypes'),
-            'rows': metadata.get('rows')
+            'rows': metadata.get('rows'),
+            'coerced_columns': coerced_cols
         }), 200
     except Exception as e:
         return jsonify({'error': f'Failed to fix dataset: {str(e)}'}), 500
@@ -206,15 +219,24 @@ def download_reduced_dataset():
     if not safe_filename.lower().endswith('.csv'):
         safe_filename += '.csv'
 
-    drop_columns = [
-        'Biopsy',
-        'Cytology',  # keep spelling variant
-        'Citology',  # dataset original spelling
-        'Dx',
-        'IUD (years)',
-        'IUD: years',
-        'STDs'
-    ]
+    # Accept custom columns via query param drop_columns (comma-separated) or repeatable params
+    drop_param = request.args.get('drop_columns')
+    drop_columns_list = request.args.getlist('drop_columns')
+
+    if drop_param:
+        drop_columns = [col for col in drop_param.split(',') if col]
+    elif drop_columns_list:
+        drop_columns = drop_columns_list
+    else:
+        drop_columns = [
+            'Biopsy',
+            'Cytology',  # keep spelling variant
+            'Citology',  # dataset original spelling
+            'Dx',
+            'IUD (years)',
+            'IUD: years',
+            'STDs'
+        ]
 
     try:
         reduced_df = df.drop(columns=drop_columns, errors='ignore')
@@ -717,9 +739,12 @@ def fix_nulls():
 
     custom_null_values = data.get('custom_null_values', [])
     columns_to_fix = data.get('columns_to_fix')
+    strategy = str(data.get('strategy', 'median')).lower()
 
     if not columns_to_fix or not isinstance(columns_to_fix, list):
         return jsonify({'error': 'columns_to_fix must be a non-empty list'}), 400
+    if strategy not in ['na', 'mean', 'median']:
+        return jsonify({'error': 'strategy must be one of: na, mean, median'}), 400
 
     try:
         all_missing_tokens = MISSING_VALUE_TOKENS + custom_null_values
@@ -739,27 +764,26 @@ def fix_nulls():
                         df_temp[col] = df_temp[col].replace(coerced_val, pd.NA)
                     except (ValueError, TypeError):
                         continue
-        
-        # Step 3: Now that nulls are standardized, fill them with the median
-        for col in columns_to_fix:
-            if col in df.columns:
-                # Coerce column to numeric, ignoring errors to handle non-numeric data
-                numeric_col = pd.to_numeric(df_temp[col], errors='coerce')
-                
-                # Check if the column is of a numeric type before filling
-                if pd.api.types.is_numeric_dtype(numeric_col):
-                    median_val = numeric_col.median()
-                    
-                    # Fill NA values in the original DataFrame using the calculated median
-                    # We use df_temp's null mask to fill the original df
-                    df.loc[df_temp[col].isnull(), col] = median_val
-                else:
-                    # Skip non-numeric columns as median is not applicable
-                    pass
-        
+
+        # Step 3: Apply fill strategy
+        if strategy in ['mean', 'median']:
+            for col in columns_to_fix:
+                if col in df_temp.columns:
+                    numeric_col = pd.to_numeric(df_temp[col], errors='coerce')
+                    if pd.api.types.is_numeric_dtype(numeric_col):
+                        fill_val = numeric_col.mean() if strategy == 'mean' else numeric_col.median()
+                        df_temp.loc[df_temp[col].isnull(), col] = fill_val
+                    else:
+                        # Skip non-numeric columns for mean/median
+                        continue
+        # strategy == 'na' keeps pd.NA as is
+
+        df = df_temp
+
         return jsonify({
-            'message': 'Null values in selected columns fixed successfully using the median.',
-            'download_endpoint': '/download-fixed-dataset'
+            'message': f'Null values in selected columns fixed successfully using strategy: {strategy}.',
+            'download_endpoint': '/download-fixed-dataset',
+            'strategy': strategy
         }), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
