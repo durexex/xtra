@@ -34,10 +34,12 @@ function App() {
   const [categorizeProportions, setCategorizeProportions] = useState(null);
   const [categorizeSplitMethod, setCategorizeSplitMethod] = useState('');
   const [knnModalOpen, setKnnModalOpen] = useState(false);
-  const [nNeighbors, setNNeighbors] = useState(3);
+  const [maxNeighbors, setMaxNeighbors] = useState(10);
   const [knnY, setKnnY] = useState('');
-  const [predictAlso, setPredictAlso] = useState(false);
-  const [predictValues, setPredictValues] = useState({});
+  const [knnScaling, setKnnScaling] = useState('RobustScaler');
+  const [imputerStrategy, setImputerStrategy] = useState('median');
+  const [zeroMissingCols, setZeroMissingCols] = useState({});
+  const [logCols, setLogCols] = useState({});
   const [linearModalOpen, setLinearModalOpen] = useState(false);
   const [linearTargetColumn, setLinearTargetColumn] = useState('');
   const [linearTestSize, setLinearTestSize] = useState(0.2);
@@ -48,6 +50,7 @@ function App() {
   const [currentCustomNullValue, setCurrentCustomNullValue] = useState('');
   const [selectedColumnsForNullCheck, setSelectedColumnsForNullCheck] = useState({});
   const [fixStrategy, setFixStrategy] = useState('median');
+  const [predictValues, setPredictValues] = useState({});
 
   const [infoModalOpen, setInfoModalOpen] = useState(false);
   const [infoData, setInfoData] = useState(null);
@@ -789,23 +792,26 @@ function App() {
   };
 
 
-  const fetchTrainTest = async (n_neighbors, y_col, predict, predict_values) => {
+  const fetchTrainTest = async (n_neighbors, y_col, scaling, imputerStrategy, zeroMissing, log) => {
     try {
-      let url = `http://localhost:5000/traintest?n_neighbors=${n_neighbors}&y_col=${y_col}&predict=${predict}`;
-      
-      const options = {
+      const response = await fetch('http://localhost:5000/knn', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ predict_values: predict_values || {} })
-      };
-
-      const response = await fetch(url, options);
+        body: JSON.stringify({ 
+          target_column: y_col,
+          zero_missing_cols: zeroMissing,
+          log_cols: log,
+          imputer_strategy: imputerStrategy,
+          scaler: scaling,
+          max_neighbors: n_neighbors
+        })
+      });
       const data = await response.json();
       
       if (response.ok) {
-        setHtmlContent(data.html);
+        setHtmlContent(JSON.stringify(data, null, 2));
         setGridData([]);
         setGridTitle('');
         setScatterPlotImage('');
@@ -835,23 +841,14 @@ function App() {
       return;
     }
 
-    if (predictAlso) {
-      const requiredColumns = columns.filter(c => c !== knnY);
-      const allFieldsFilled = requiredColumns.every(col => predictValues[col] && predictValues[col].trim() !== '');
-      
-      if (!allFieldsFilled) {
-        alert("Please fill in all prediction values.");
-        return;
-      }
-    }
+    const zeroMissing = Object.keys(zeroMissingCols).filter(col => zeroMissingCols[col]);
+    const log = Object.keys(logCols).filter(col => logCols[col]);
 
-    fetchTrainTest(nNeighbors, knnY, predictAlso, predictValues);
+    fetchTrainTest(maxNeighbors, knnY, knnScaling, imputerStrategy, zeroMissing, log);
     closeKnnModal();
   };
 
-  const handlePredictChange = (column, value) => {
-    setPredictValues(prev => ({ ...prev, [column]: value }));
-  };
+
 
   const renderProportionTable = (label, data, categories) => {
     const keys = (categories && categories.length ? categories : Object.keys(data || {})) || [];
@@ -1038,7 +1035,7 @@ function App() {
         <button onClick={openCategorizeModal} disabled={columns.length === 0}>Categorizar coluna</button>
         <button onClick={openScatterPlotModal} disabled={columns.length === 0}>Scatter Plot</button>
         <button onClick={handleScatterPlot3dSubmit} disabled={true}>3D Scatter Plot</button>
-        <button onClick={openKnnModal} disabled={columns.length === 0}>KNN (test & train)</button>
+        <button onClick={openKnnModal} disabled={columns.length === 0}>KNN</button>
         <button onClick={openLinearModal} disabled={columns.length === 0}>Regressao Linear Multipla</button>
       </div>
       <div className="content">
@@ -1394,13 +1391,13 @@ function App() {
             <h2>Configurar KNN</h2>
             <form onSubmit={handleKnnSubmit} className="modal-body">
               <div className="form-group">
-                <label className="form-label">Number of Neighbors (n_neighbors)</label>
+                <label className="form-label">Max Neighbors</label>
                 <input
                   className="input-styled"
                   type="number"
-                  value={nNeighbors}
-                  onChange={(e) => setNNeighbors(e.target.value)}
-                  min="1"
+                  value={maxNeighbors}
+                  onChange={(e) => setMaxNeighbors(e.target.value)}
+                  min="3"
                 />
               </div>
               <div className="form-group">
@@ -1417,33 +1414,64 @@ function App() {
                   ))}
                 </select>
               </div>
-              <label className="toggle">
-                <input
-                  type="checkbox"
-                  checked={predictAlso}
-                  onChange={(e) => setPredictAlso(e.target.checked)}
-                />
-                <span>Gerar tambem previsao</span>
-              </label>
-
-              {predictAlso && (
-                <div className="predict-values">
-                  <h3>Valores para predicao:</h3>
-                  {columns.filter(c => c !== knnY).map(col => (
-                    <div key={col} className="form-group">
-                      <label className="form-label">{col}:</label>
-                      <input
-                        className="input-styled"
-                        type="number"
-                        step="any"
-                        value={predictValues[col] || ''}
-                        onChange={(e) => handlePredictChange(col, e.target.value)}
+              <div className="form-group">
+                <label className="form-label">Imputer Strategy</label>
+                <div>
+                  <label>
+                    <input type="radio" value="median" checked={imputerStrategy === 'median'} onChange={(e) => setImputerStrategy(e.target.value)} />
+                    Median
+                  </label>
+                  <label>
+                    <input type="radio" value="mean" checked={imputerStrategy === 'mean'} onChange={(e) => setImputerStrategy(e.target.value)} />
+                    Mean
+                  </label>
+                </div>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Scaler</label>
+                <div>
+                  <label>
+                    <input type="radio" value="RobustScaler" checked={knnScaling === 'RobustScaler'} onChange={(e) => setKnnScaling(e.target.value)} />
+                    RobustScaler
+                  </label>
+                  <label>
+                    <input type="radio" value="StandardScaler" checked={knnScaling === 'StandardScaler'} onChange={(e) => setKnnScaling(e.target.value)} />
+                    StandardScaler
+                  </label>
+                </div>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Zero Missing Columns</label>
+                <div className="null-checkbox-grid">
+                  {columns.map(col => (
+                    <label key={col} className="pill-checkbox">
+                      <input 
+                        type="checkbox" 
+                        name={col}
+                        checked={zeroMissingCols[col] || false} 
+                        onChange={(e) => setZeroMissingCols(prev => ({...prev, [e.target.name]: e.target.checked}))} 
                       />
-                    </div>
+                      <span>{col}</span>
+                    </label>
                   ))}
                 </div>
-              )}
-              
+              </div>
+              <div className="form-group">
+                <label className="form-label">Log Columns</label>
+                <div className="null-checkbox-grid">
+                  {columns.map(col => (
+                    <label key={col} className="pill-checkbox">
+                      <input 
+                        type="checkbox" 
+                        name={col}
+                        checked={logCols[col] || false} 
+                        onChange={(e) => setLogCols(prev => ({...prev, [e.target.name]: e.target.checked}))} 
+                      />
+                      <span>{col}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
               <div className="modal-actions">
                 <button type="button" className="btn-ghost" onClick={closeKnnModal}>Cancelar</button>
                 <button type="submit" className="btn-cta">Executar KNN</button>

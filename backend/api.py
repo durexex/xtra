@@ -13,6 +13,11 @@ from sklearn.model_selection import train_test_split, StratifiedShuffleSplit
 from sklearn.neighbors import KNeighborsClassifier 
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import accuracy_score, classification_report, mean_squared_error, mean_absolute_error, r2_score
+from sklearn.preprocessing import StandardScaler, MinMaxScaler, RobustScaler
+from sklearn.impute import SimpleImputer
+from sklearn.pipeline import Pipeline
+from sklearn.model_selection import GridSearchCV
+from utils import ZeroToNaNTransformer, Log1pTransformer
 import missingno as msno
 import seaborn as sns
 import math
@@ -23,7 +28,7 @@ from pandas.plotting import scatter_matrix
 plt.switch_backend('Agg')
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, resources={r"/*": {"origins": "*"}})
 
 # Store dataframe in memory
 df = None
@@ -75,6 +80,8 @@ def _build_dataframe_info(target_df: pd.DataFrame) -> dict:
 @app.route('/upload', methods=['POST'])
 def upload_file():
     global df
+    app.logger.info(f"Request headers: {request.headers}")
+    app.logger.info(f"Request files: {request.files}")
     if 'file' not in request.files:
         return jsonify({'error': 'No file part'}), 400
     file = request.files['file']
@@ -85,7 +92,7 @@ def upload_file():
             df = pd.read_csv(file)
             return jsonify({'message': 'File uploaded successfully', 'columns': list(df.columns)}), 200
         except Exception as e:
-            return jsonify({'error': str(e)}), 500
+            return jsonify({'error': f'Error reading CSV file: {e}'}), 500
     else:
         return jsonify({'error': 'Invalid file type'}), 400
 
@@ -802,6 +809,7 @@ def run_linear_regression():
         return jsonify({'error': str(e)}), 500
 
 
+
 @app.route('/traintest', methods=['GET', 'POST'])
 def get_traintest():
     if df is None:
@@ -810,6 +818,7 @@ def get_traintest():
     n_neighbors = request.args.get('n_neighbors', default=3, type=int)
     y_col = request.args.get('y_col')
     predict = request.args.get('predict', 'false').lower() == 'true'
+    scaling = request.args.get('scaling', 'none').lower()
 
     if not y_col or y_col not in df.columns:
         return jsonify({'error': 'Invalid or missing y_col parameter'}), 400
@@ -820,6 +829,16 @@ def get_traintest():
         
         x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.2, stratify=y, random_state=42)
         
+        scaler = None
+        if scaling == 'standard':
+            scaler = StandardScaler()
+            x_train = scaler.fit_transform(x_train)
+            x_test = scaler.transform(x_test)
+        elif scaling == 'minmax':
+            scaler = MinMaxScaler()
+            x_train = scaler.fit_transform(x_train)
+            x_test = scaler.transform(x_test)
+
         modelo_classificador = KNeighborsClassifier(n_neighbors=n_neighbors)
         modelo_classificador.fit(x_train, y_train)
         
@@ -834,6 +853,7 @@ def get_traintest():
             <p><strong>Training set size:</strong> {len(x_train)} samples</p>
             <p><strong>Test set size:</strong> {len(x_test)} samples</p>
             <p><strong>Accuracy:</strong> {accuracy:.4f}</p>
+            <p><strong>Scaling:</strong> {scaling}</p>
             <h4>Classification Metrics</h4>
             <pre>{json.dumps(metrics_report, indent=2)}</pre>
         </div>
@@ -860,6 +880,10 @@ def get_traintest():
                     return jsonify({'error': f'Invalid input for {col}: must be a number'}), 400
             
             user_df = pd.DataFrame.from_dict(user_input)
+            
+            if scaler:
+                user_df = scaler.transform(user_df)
+
             prediction = modelo_classificador.predict(user_df)
             
             html_response += f"""
@@ -872,6 +896,7 @@ def get_traintest():
         return jsonify({'html': html_response}), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
 
 @app.route('/fix-nulls', methods=['POST'])
 def fix_nulls():
@@ -990,6 +1015,77 @@ def download_categorized_dataset():
         )
     except Exception as e:
         return jsonify({'error': f'Failed to generate categorized dataset: {str(e)}'}), 500
+
+
+def _save_plot_to_base64():
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png')
+    buf.seek(0)
+    image_base64 = base64.b64encode(buf.getvalue()).decode('utf-8')
+    buf.close()
+    plt.close()
+    return image_base64
+    
+
+@app.route('/knn', methods=['POST'])
+def knn():
+    if df is None:
+        return jsonify({'error': 'No dataframe loaded'}), 400
+
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'Invalid request body'}), 400
+
+    target_column = data.get('target_column')
+    zero_missing_cols = data.get('zero_missing_cols', [])
+    log_cols = data.get('log_cols', [])
+    imputer_strategy = data.get('imputer_strategy', 'median')
+    scaler_option = data.get('scaler', 'RobustScaler')
+    max_neighbors = data.get('max_neighbors', 10)
+
+    if not target_column or target_column not in df.columns:
+        return jsonify({'error': 'Invalid or missing target_column parameter'}), 400
+
+    X = df.drop(columns=[target_column])
+    y = df[target_column]
+
+    # Create the pipeline
+    steps = []
+    if zero_missing_cols:
+        steps.append(('zero_to_nan', ZeroToNaNTransformer(columns=zero_missing_cols)))
+    
+    steps.append(('imputer', SimpleImputer(strategy=imputer_strategy)))
+    
+    if log_cols:
+        steps.append(('log1p', Log1pTransformer(columns=log_cols)))
+
+    if scaler_option == 'StandardScaler':
+        steps.append(('scaler', StandardScaler()))
+    else:
+        steps.append(('scaler', RobustScaler()))
+    
+    steps.append(('knn', KNeighborsClassifier()))
+
+    pipeline = Pipeline(steps)
+
+    # GridSearchCV
+    param_grid = {
+        'knn__n_neighbors': list(range(3, max_neighbors + 1)),
+        'knn__weights': ['uniform', 'distance'],
+        'knn__p': [1, 2]
+    }
+
+    try:
+        grid_search = GridSearchCV(pipeline, param_grid, cv=5, scoring='accuracy', n_jobs=-1)
+        grid_search.fit(X, y)
+
+        return jsonify({
+            'best_score': grid_search.best_score_,
+            'best_params': grid_search.best_params_,
+            'cv_results': grid_search.cv_results_
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 
 if __name__ == '__main__':
