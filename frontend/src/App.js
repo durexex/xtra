@@ -239,6 +239,45 @@ function App() {
     }
   };
 
+  const fetchPearsonSkewness = async () => {
+    try {
+      const response = await fetch('http://localhost:5000/pearson-skewness');
+      const data = await response.json();
+      if (response.ok) {
+        const orderedColumns = columns.length > 0 ? columns : Object.keys(data || {});
+        const transformedData = orderedColumns.map((col) => {
+          const value = data ? data[col] : null;
+          const numericVal = Number(value);
+          const formatted = value === null || value === undefined || Number.isNaN(numericVal)
+            ? '-'
+            : numericVal.toFixed(4);
+          return { Coluna: col, 'A2 (3*(media-mediana)/std)': formatted };
+        });
+        setGridData(transformedData);
+        setGridTitle('Segundo coeficiente de Pearson (A2):');
+        setScatterPlotImage('');
+        setScatterCorrelation(null);
+        setBoxplotImage('');
+        setBoxplotColumn('');
+        setCorrelationMatrixImage('');
+        setHistogramImage('');
+        setHistogramDetails(null);
+        setHtmlContent('');
+        setCategorizeHistBefore('');
+        setCategorizeHistAfter('');
+        setCategorizeInfo(null);
+        setCategorizeProportions(null);
+        setCategorizeSplitMethod('');
+        resetLinearRegressionOutput();
+      } else {
+        alert(`Error: ${data.error}`);
+      }
+    } catch (error) {
+      console.error('Error fetching median data:', error);
+      alert('An error occurred while fetching the medians.');
+    }
+  };
+
   const openNullValuesModal = () => setNullValuesModalOpen(true);
   const closeNullValuesModal = () => setNullValuesModalOpen(false);
 
@@ -1022,6 +1061,7 @@ function App() {
         <button onClick={openModal}>Load File</button>
         <button onClick={fetchHead} disabled={columns.length === 0}>Head</button>
         <button onClick={fetchDescribe} disabled={columns.length === 0}>Describe</button>
+        <button onClick={fetchPearsonSkewness} disabled={columns.length === 0}>Coeficiente de Assimetria</button>
         <button onClick={openGroupByModal} disabled={columns.length === 0}>Group By</button>
         <button onClick={openNullValuesModal} disabled={columns.length === 0}>Valores Nulos</button>
         <button onClick={fetchDataframeInfo} disabled={columns.length === 0}>Dataframe Info</button>

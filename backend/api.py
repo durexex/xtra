@@ -139,6 +139,51 @@ def get_describe():
     except Exception as e:
         return jsonify({'error': f'Failed to compute describe: {str(e)}'}), 500
 
+
+@app.route('/pearson-skewness', methods=['GET'])
+def get_pearson_skewness():
+    """
+    Compute the second Pearson coefficient of skewness (A2) for numeric columns:
+    A2 = 3 * (mean - median) / std.
+    """
+    if df is None:
+        return jsonify({'error': 'No dataframe loaded'}), 400
+    try:
+        skew_df = df.copy()
+        skew_df = skew_df.replace(MISSING_VALUE_TOKENS, pd.NA)
+
+        # Convert mostly numeric object columns before computing stats
+        for col in skew_df.select_dtypes(include=['object']).columns:
+            numeric_col = pd.to_numeric(skew_df[col], errors='coerce')
+            original_non_na = skew_df[col].notna().sum()
+            converted_non_na = numeric_col.notna().sum()
+            if original_non_na > 0 and converted_non_na >= 0.9 * original_non_na:
+                skew_df[col] = numeric_col
+
+        result = {col: None for col in skew_df.columns}
+        numeric_df = skew_df.select_dtypes(include=['number'])
+
+        for col in numeric_df.columns:
+            series = numeric_df[col].dropna()
+            if series.empty:
+                result[col] = None
+                continue
+            std = series.std()
+            if std == 0 or pd.isna(std):
+                result[col] = None
+                continue
+            mean = series.mean()
+            median = series.median()
+            skewness = 3 * (mean - median) / std
+            try:
+                result[col] = skewness.item() if hasattr(skewness, 'item') else float(skewness)
+            except Exception:
+                result[col] = float(skewness)
+
+        return jsonify(result), 200
+    except Exception as e:
+        return jsonify({'error': f'Failed to compute Pearson skewness: {str(e)}'}), 500
+
 @app.route('/null-values', methods=['GET', 'POST'])
 def get_null_values():
     if df is None:
