@@ -5,10 +5,10 @@ import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
 from sklearn.compose import ColumnTransformer
-from sklearn.preprocessing import FunctionTransformer, RobustScaler, StandardScaler, OneHotEncoder
+from sklearn.preprocessing import FunctionTransformer, StandardScaler, OneHotEncoder, RobustScaler
 from sklearn.impute import SimpleImputer
-from sklearn.linear_model import LinearRegression
-from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score
 
 # Importando a base de dados
 dados = pd.read_csv(r'C:\Projetos\xtra\dataset\diabetes.csv')
@@ -28,6 +28,7 @@ num_cols = [c for c in X.columns if c != "Age"]
 # definição dos zeros que serão tratados
 ZERO_AS_MISSING = {"Glucose", "BloodPressure", "SkinThickness", "Insulin", "BMI"}
 LOG1P_COLS = {"Insulin", "DiabetesPedigreeFunction", "SkinThickness"}  
+#Criando as faixas das idades
 AGE_BINS = [14, 21, 28, 35, 41, 48, np.inf]
 AGE_LABELS = ["14-20", "21-27", "28-34", "35-40", "41-47", "48+"]
 
@@ -84,10 +85,10 @@ preprocess = ColumnTransformer(
     remainder="drop"
 )
 
-# 6) Pipeline final: preprocess + regressão linear
+# 6) Pipeline final: preprocess + regressão logística
 model = Pipeline(steps=[
     ("preprocess", preprocess),
-    ("regressor", LinearRegression())
+    ("classifier", LogisticRegression(max_iter=1000, n_jobs=-1, solver="lbfgs"))
 ])
 
 # 7) Split (ex.: 80/20 treino/teste)
@@ -101,23 +102,19 @@ X_train, X_test, y_train, y_test = train_test_split(
 # 8) Treinar e avaliar
 model.fit(X_train, y_train)
 y_pred = model.predict(X_test)
+y_pred_proba = model.predict_proba(X_test)[:, 1]
+threshold = 0.1  
+y_pred = (y_pred_proba >= threshold).astype(int)
 
-mse = mean_squared_error(y_test, y_pred)
-mae = mean_absolute_error(y_test, y_pred)
-r2 = r2_score(y_test, y_pred)
+acc = accuracy_score(y_test, y_pred)
+prec = precision_score(y_test, y_pred, zero_division=0)
+rec = recall_score(y_test, y_pred, zero_division=0)
+f1 = f1_score(y_test, y_pred, zero_division=0)
+roc_auc = roc_auc_score(y_test, y_pred_proba)
 
-# MAPE: cuidado com y=0 (divide por zero). Aqui uso uma versão "safe".
-y_test_np = y_test.to_numpy()
-eps = 1e-9
-mape = np.mean(np.abs((y_test_np - y_pred) / np.maximum(np.abs(y_test_np), eps))) * 100
-
-print(f"MSE:  {mse:.4f}")
-print(f"MAE:  {mae:.4f}")
-print(f"R2:   {r2:.4f}")
-print(f"MAPE: {mape:.2f}%")
-
-# 9) (Opcional) transformar predição em classe para inspecionar acurácia
-# (isso já vira um "classificador improvisado"; o correto é LogisticRegression)
-y_class = (y_pred >= 0.5).astype(int)
-acc = (y_class == y_test_np).mean()
-print(f"Accuracy com threshold 0.5 (apenas referência): {acc:.4f}")
+# print(f"Threshold: {threshold}")
+print(f"Accuracy:  {acc:.4f}")
+print(f"Precision: {prec:.4f}")
+print(f"Recall:    {rec:.4f}")
+print(f"F1-score:  {f1:.4f}")
+print(f"ROC AUC:   {roc_auc:.4f}")
