@@ -24,12 +24,12 @@ y = dados["Outcome"]
 
 # 3) Definir colunas numéricas
 num_cols = list(X.columns)
-robust_cols = ["Insulin", "DiabetesPedigreeFunction"]
-standard_cols = ["Pregnancies", "SkinThickness", "BMI", "BloodPressure", "Glucose", "Age"]
+robust_cols = ["DiabetesPedigreeFunction"]
+standard_cols = ["Pregnancies", "SkinThickness", "BMI", "BloodPressure", "Glucose", "Insulin", "Age"]
 
 # definição dos zeros que serão tratados
 ZERO_AS_MISSING = {"Glucose", "BloodPressure", "SkinThickness", "Insulin", "BMI"}
-LOG1P_COLS = {"Insulin", "DiabetesPedigreeFunction", "SkinThickness"}  
+LOG1P_COLS = {"Insulin"}  
 
 def zero_to_nan(X_array, columns):
     """
@@ -94,7 +94,7 @@ X_train, X_test, y_train, y_test = train_test_split(
 model.fit(X_train, y_train)
 y_pred = model.predict(X_test)
 y_pred_proba = model.predict_proba(X_test)[:, 1]
-threshold = 0.2  
+threshold = 0.15
 y_pred = (y_pred_proba >= threshold).astype(int)
 
 acc = accuracy_score(y_test, y_pred)

@@ -27,10 +27,6 @@ num_cols = [c for c in X.columns if c != "Age"]
 
 # definição dos zeros que serão tratados
 ZERO_AS_MISSING = {"Glucose", "BloodPressure", "SkinThickness", "Insulin", "BMI"}
-LOG1P_COLS = {"Insulin", "DiabetesPedigreeFunction", "SkinThickness"}  
-#Criando as faixas das idades
-AGE_BINS = [14, 21, 28, 35, 41, 48, np.inf]
-AGE_LABELS = ["14-20", "21-27", "28-34", "35-40", "41-47", "48+"]
 
 def zero_to_nan(X_array):
     """
@@ -45,44 +41,20 @@ def zero_to_nan(X_array):
             X_array[X_array[:, i] == 0, i] = np.nan
     return X_array
 
-def log1p_selected(X_array):
-    X_array = np.asarray(X_array, dtype=float).copy()
-    col_idx = {c: i for i, c in enumerate(num_cols)}
-    for c in LOG1P_COLS:
-        if c in col_idx:
-            i = col_idx[c]            
-            X_array[:, i] = np.log1p(X_array[:, i])
-    return X_array
-
-def age_to_category(X_array):
-    """
-    Recebe apenas a coluna Age e devolve uma coluna categórica codificando os intervalos.
-    """
-    arr = np.asarray(X_array, dtype=float).ravel()
-    cats = pd.cut(arr, bins=AGE_BINS, labels=AGE_LABELS, right=False)
-    return np.asarray(cats, dtype=object).reshape(-1, 1)
-
-
 # 5) Pré-processamento numérico
 numeric_preprocess = Pipeline(steps=[
     ("zero_to_nan", FunctionTransformer(zero_to_nan, feature_names_out="one-to-one")),
     ("imputer", SimpleImputer(strategy="median")),
-    ("log1p", FunctionTransformer(log1p_selected, feature_names_out="one-to-one")),    
 ])
 
-#Aqui pega as faixas e transforma num "índice"
-age_preprocess = Pipeline(steps=[
-    ("bin_age", FunctionTransformer(age_to_category, feature_names_out="one-to-one")),
-    ("onehot", OneHotEncoder(handle_unknown="ignore", sparse_output=False)),
-])
 
 preprocess = ColumnTransformer(
     transformers=[
-        ("num", numeric_preprocess, num_cols),
-        ("age", age_preprocess, ["Age"]),
+        ("num", numeric_preprocess, num_cols),        
     ],
     remainder="drop"
 )
+
 
 # 6) Pipeline final: preprocess + árvore de decisão
 base_model = Pipeline(steps=[
@@ -121,7 +93,7 @@ grid.fit(X_train, y_train)
 best_model = grid.best_estimator_
 y_pred = best_model.predict(X_test)
 y_pred_proba = best_model.predict_proba(X_test)[:, 1]
-threshold = 0.5
+threshold = 0.9
 y_pred = (y_pred_proba >= threshold).astype(int)
 
 acc = accuracy_score(y_test, y_pred)

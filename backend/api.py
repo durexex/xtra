@@ -457,6 +457,75 @@ def get_histogram():
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/log1p', methods=['POST'])
+def log1p_column():
+    """
+    Aplica log1p a uma coluna específica, tratando zeros como NaN para colunas
+    conhecidas, imputando a mediana e devolvendo o histograma da coluna
+    transformada. Atualiza o dataframe global em memória.
+    """
+    global df
+    if df is None:
+        return jsonify({'error': 'No dataframe loaded'}), 400
+
+    payload = request.get_json(silent=True) or {}
+    column = payload.get('column')
+    if not column or column not in df.columns:
+        return jsonify({'error': 'Invalid or missing column parameter'}), 400
+
+    ZERO_AS_MISSING = {"Glucose", "BloodPressure", "SkinThickness", "Insulin", "BMI"}
+
+    try:
+        working_df = df.copy()
+        series = pd.to_numeric(working_df[column], errors='coerce')
+
+        if column in ZERO_AS_MISSING:
+            series = series.replace(0, np.nan)
+
+        if series.isna().all():
+            return jsonify({'error': f'Coluna {column} não possui valores numéricos válidos para aplicar log1p.'}), 400
+
+        median_val = series.median()
+        if pd.isna(median_val):
+            median_val = 0.0
+        series = series.fillna(median_val)
+
+        # log1p exige valores >= -1
+        if (series < -1).any():
+            return jsonify({'error': f'Coluna {column} contém valores menores que -1 após imputação; log1p não pode ser aplicado.'}), 400
+
+        transformed = np.log1p(series.to_numpy())
+        working_df[column] = transformed
+        df = working_df
+
+        bins = max(10, min(50, int(math.sqrt(len(transformed))) if len(transformed) > 0 else 10))
+        plt.figure(figsize=(8, 4.5))
+        plt.hist(transformed, bins=bins, color='steelblue', edgecolor='black')
+        plt.title(f'{column} - log1p')
+        plt.xlabel('Valor transformado (log1p)')
+        plt.ylabel('Frequência')
+        plt.tight_layout()
+
+        buf = io.BytesIO()
+        plt.savefig(buf, format='png')
+        buf.seek(0)
+        image_base64 = base64.b64encode(buf.getvalue()).decode('utf-8')
+        buf.close()
+        plt.close()
+
+        return jsonify({
+            'message': f'Coluna {column} transformada com log1p e atualizada no dataset.',
+            'image': image_base64,
+            'bins': int(bins),
+            'column': column,
+            'median_used': float(median_val),
+            'mean': float(np.mean(transformed)),
+            'std': float(np.std(transformed))
+        }), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/correlation-matrix', methods=['GET'])
 def get_correlation_matrix():
     """

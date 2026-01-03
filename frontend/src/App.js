@@ -25,6 +25,11 @@ function App() {
   const [boxplotColumn, setBoxplotColumn] = useState('');
   const [histogramImage, setHistogramImage] = useState('');
   const [histogramDetails, setHistogramDetails] = useState(null);
+  const [log1pModalOpen, setLog1pModalOpen] = useState(false);
+  const [log1pColumn, setLog1pColumn] = useState('');
+  const [log1pImage, setLog1pImage] = useState('');
+  const [log1pDetails, setLog1pDetails] = useState(null);
+  const [log1pMessage, setLog1pMessage] = useState('');
   const [categorizeColumn, setCategorizeColumn] = useState('');
   const [categorizeBins, setCategorizeBins] = useState('');
   const [categorizeAllowDecimals, setCategorizeAllowDecimals] = useState(false);
@@ -69,6 +74,12 @@ function App() {
     setLinearPredictions([]);
   };
 
+  const resetLog1pOutput = () => {
+    setLog1pImage('');
+    setLog1pDetails(null);
+    setLog1pMessage('');
+  };
+
   const formatMetric = (value) => {
     if (value === null || value === undefined || Number.isNaN(value)) {
       return '-';
@@ -108,6 +119,8 @@ function App() {
         setBoxplotColumn('');
         setHistogramImage('');
         setHistogramDetails(null);
+        resetLog1pOutput();
+        setLog1pColumn('');
         setHtmlContent('');
         setInfoData(null);
         setInfoError(null);
@@ -143,6 +156,8 @@ function App() {
   const closeBoxplotModal = () => setBoxplotModalOpen(false);
   const openHistogramModal = () => setHistogramModalOpen(true);
   const closeHistogramModal = () => setHistogramModalOpen(false);
+  const openLog1pModal = () => setLog1pModalOpen(true);
+  const closeLog1pModal = () => setLog1pModalOpen(false);
   const openCategorizeModal = () => setCategorizeModalOpen(true);
   const closeCategorizeModal = () => setCategorizeModalOpen(false);
   const openKnnModal = () => {
@@ -186,12 +201,14 @@ function App() {
         setCorrelationMatrixImage('');
         setHistogramImage('');
         setHistogramDetails(null);
+        resetLog1pOutput();
         setHtmlContent('');
         setCategorizeHistBefore('');
         setCategorizeHistAfter('');
         setCategorizeInfo(null);
         setCategorizeProportions(null);
         setCategorizeSplitMethod('');
+        resetLog1pOutput();
         resetLinearRegressionOutput();
       } else {
         alert(`Error: ${data.error}`);
@@ -225,6 +242,7 @@ function App() {
         setHistogramImage('');
         setHistogramDetails(null);
         setHtmlContent('');
+        resetLog1pOutput();
         setCategorizeHistBefore('');
         setCategorizeHistAfter('');
         setCategorizeInfo(null);
@@ -262,6 +280,7 @@ function App() {
         setCorrelationMatrixImage('');
         setHistogramImage('');
         setHistogramDetails(null);
+        resetLog1pOutput();
         setHtmlContent('');
         setCategorizeHistBefore('');
         setCategorizeHistAfter('');
@@ -361,6 +380,7 @@ function App() {
         setScatterCorrelation(null);
         setHistogramImage('');
         setHistogramDetails(null);
+        resetLog1pOutput();
         setCorrelationMatrixImage('');
         setCategorizeHistBefore('');
         setCategorizeHistAfter('');
@@ -489,6 +509,7 @@ function App() {
         setBoxplotColumn('');
         setHistogramImage('');
         setHistogramDetails(null);
+        resetLog1pOutput();
         setCategorizeHistBefore('');
         setCategorizeHistAfter('');
         setCategorizeInfo(null);
@@ -556,6 +577,7 @@ function App() {
         setScatterCorrelation(null);
         setHistogramImage('');
         setHistogramDetails(null);
+        resetLog1pOutput();
         setCorrelationMatrixImage('');
         setCategorizeHistBefore('');
         setCategorizeHistAfter('');
@@ -592,6 +614,7 @@ function App() {
         setScatterCorrelation(null);
         setHistogramImage('');
         setHistogramDetails(null);
+        resetLog1pOutput();
         setCorrelationMatrixImage('');
         setCategorizeHistBefore('');
         setCategorizeHistAfter('');
@@ -669,6 +692,59 @@ function App() {
     }
   };
 
+  const handleLog1pSubmit = async (e) => {
+    e.preventDefault();
+    if (!log1pColumn) {
+      alert('Selecione uma coluna.');
+      return;
+    }
+
+    try {
+      const response = await fetch('http://localhost:5000/log1p', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ column: log1pColumn }),
+      });
+      const data = await response.json();
+      if (response.ok) {
+        setLog1pImage(`data:image/png;base64,${data.image}`);
+        setLog1pDetails({
+          bins: data.bins,
+          column: data.column,
+          medianUsed: data.median_used,
+          mean: data.mean,
+          std: data.std,
+        });
+        setLog1pMessage(data.message || '');
+        setGridData([]);
+        setGridTitle('');
+        setHtmlContent('');
+        setScatterPlotImage('');
+        setScatterCorrelation(null);
+        setBoxplotImage('');
+        setBoxplotColumn('');
+        setHistogramImage('');
+        setHistogramDetails(null);
+        setCorrelationMatrixImage('');
+        setCategorizeHistBefore('');
+        setCategorizeHistAfter('');
+        setCategorizeInfo(null);
+        setCategorizeProportions(null);
+        setCategorizeSplitMethod('');
+        resetLinearRegressionOutput();
+        closeLog1pModal();
+        setLog1pColumn('');
+      } else {
+        alert(`Error: ${data.error}`);
+      }
+    } catch (error) {
+      console.error('Error applying log1p:', error);
+      alert('An error occurred while applying log1p.');
+    }
+  };
+
   const handleCorrelationMatrixSubmit = async () => {
     try {
       const response = await fetch('http://localhost:5000/correlation-matrix');
@@ -684,6 +760,7 @@ function App() {
         setBoxplotColumn('');
         setHistogramImage('');
         setHistogramDetails(null);
+        resetLog1pOutput();
         setCategorizeHistBefore('');
         setCategorizeHistAfter('');
         setCategorizeInfo(null);
@@ -721,6 +798,7 @@ function App() {
         setBoxplotColumn('');
         setHistogramImage('');
         setHistogramDetails(null);
+        resetLog1pOutput();
         setCorrelationMatrixImage('');
         setCategorizeHistBefore('');
         setCategorizeHistAfter('');
@@ -750,6 +828,7 @@ function App() {
         setHtmlContent('');
         setHistogramImage('');
         setHistogramDetails(null);
+        resetLog1pOutput();
         setCategorizeHistBefore('');
         setCategorizeHistAfter('');
         setCategorizeInfo(null);
@@ -811,6 +890,7 @@ function App() {
         setScatterCorrelation(null);
         setHistogramImage('');
         setHistogramDetails(null);
+        resetLog1pOutput();
         setCategorizeHistBefore('');
         setCategorizeHistAfter('');
         setCategorizeInfo(null);
@@ -857,6 +937,7 @@ function App() {
         setScatterCorrelation(null);
         setHistogramImage('');
         setHistogramDetails(null);
+        resetLog1pOutput();
         setCategorizeHistBefore('');
         setCategorizeHistAfter('');
         setCategorizeInfo(null);
@@ -1071,6 +1152,7 @@ function App() {
         <button onClick={openReducedModal} disabled={columns.length === 0}>Salvar reduzido</button>
         <button onClick={openBoxplotModal} disabled={columns.length === 0}>Boxplot</button>
         <button onClick={openHistogramModal} disabled={columns.length === 0}>Histogram</button>
+        <button onClick={openLog1pModal} disabled={columns.length === 0}>log1p</button>
         <button onClick={handleCorrelationMatrixSubmit} disabled={columns.length === 0}>Matriz Correlacao</button>
         <button onClick={openCategorizeModal} disabled={columns.length === 0}>Categorizar coluna</button>
         <button onClick={openScatterPlotModal} disabled={columns.length === 0}>Scatter Plot</button>
@@ -1132,7 +1214,7 @@ function App() {
                />
              </div>
            )}
-           {histogramImage && (
+            {histogramImage && (
               <div>
                 <h2>Histogramas:</h2>
                 {histogramDetails && (
@@ -1143,6 +1225,18 @@ function App() {
                   </p>
                 )}
                 <img src={histogramImage} alt="Histogram" />
+              </div>
+            )}
+            {log1pImage && (
+              <div>
+                <h2>log1p:</h2>
+                {log1pDetails && (
+                  <p>
+                    Coluna: {log1pDetails.column || '-'} | Bins: {log1pDetails.bins ?? '-'} | Média: {log1pDetails.mean !== undefined && log1pDetails.mean !== null ? log1pDetails.mean.toFixed(4) : '-'} | Std: {log1pDetails.std !== undefined && log1pDetails.std !== null ? log1pDetails.std.toFixed(4) : '-'} | Mediana usada: {log1pDetails.medianUsed !== undefined && log1pDetails.medianUsed !== null ? Number(log1pDetails.medianUsed).toFixed(4) : '-'}
+                  </p>
+                )}
+                {log1pMessage && <p className="muted">{log1pMessage}</p>}
+                <img src={log1pImage} alt="Histogram after log1p" />
               </div>
             )}
             {categorizeHistBefore && categorizeHistAfter && (
@@ -1333,6 +1427,36 @@ function App() {
         <p>Gerar histogramas para todas as colunas numericas usando pandas DataFrame.hist.</p>
         <p>As configuracoes de bins e tamanho da figura sao ajustadas automaticamente pelo backend.</p>
         <button onClick={handleHistogramSubmit}>Gerar histogramas</button>
+      </Modal>
+
+      <Modal
+        isOpen={log1pModalOpen}
+        onClose={closeLog1pModal}
+        title="log1p"
+      >
+        <form onSubmit={handleLog1pSubmit} className="modal-body">
+          <div className="form-group">
+            <label className="form-label">Selecione a coluna para aplicar log1p</label>
+            <select
+              className="select-styled"
+              value={log1pColumn}
+              onChange={(e) => setLog1pColumn(e.target.value)}
+              required
+            >
+              <option value="">Selecione</option>
+              {columns.map((col) => (
+                <option key={col} value={col}>{col}</option>
+              ))}
+            </select>
+          </div>
+          <p className="muted">
+            Zeros nas colunas conhecidas como missing sao tratados como NaN, preenchidos com a mediana e transformados com log1p. O histograma da coluna transformada sera exibido ao finalizar.
+          </p>
+          <div className="modal-actions">
+            <button type="button" className="btn-ghost" onClick={closeLog1pModal}>Cancelar</button>
+            <button type="submit" className="btn-cta" disabled={!log1pColumn}>Aplicar log1p</button>
+          </div>
+        </form>
       </Modal>
 
       <Modal
