@@ -1,4 +1,3 @@
-# Importando as bibliotecas necessárias
 import numpy as np
 import pandas as pd
 
@@ -10,21 +9,15 @@ from sklearn.impute import SimpleImputer
 from sklearn.svm import SVC
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score
 
-# Importando a base de dados
 dados = pd.read_csv(r'C:\Projetos\xtra\dataset\diabetes.csv')
 
-# gerando arquivo com as correlações
 with open('corr.txt', 'w', encoding='utf-8') as f:
     f.write(dados.corr().to_string())
 
 
-# 2) Separar target das outras características
 X = dados.drop(columns=["Outcome"])
 y = dados["Outcome"]
 
-# 3) Definir colunas numéricas e grupos de escalonamento
-
-# definição dos zeros que serão tratados
 ZERO_AS_MISSING = {"Glucose", "BloodPressure", "SkinThickness", "Insulin", "BMI"}
 LOG1P_COLS = {"Insulin"}
 robust_cols = ["DiabetesPedigreeFunction"]
@@ -53,7 +46,6 @@ def log1p_selected(X_array, columns):
     return X_array
 
 
-# 5) Pré-processamento numérico
 robust_preprocess = Pipeline(steps=[
     ("zero_to_nan", FunctionTransformer(zero_to_nan, kw_args={"columns": robust_cols}, feature_names_out="one-to-one")),
     ("imputer", SimpleImputer(strategy="median")),
@@ -75,7 +67,6 @@ preprocess = ColumnTransformer(
     remainder="drop"
 )
 
-# 6) Pipeline final: preprocess + SVM
 base_model = Pipeline(steps=[
     ("preprocess", preprocess),
     ("classifier", SVC(probability=True, random_state=42))
@@ -97,31 +88,25 @@ grid = GridSearchCV(
     refit=True,
 )
 
-# 7) Split (ex.: 80/20 treino/teste)
 X_train, X_test, y_train, y_test = train_test_split(
     X, y,
     test_size=0.20,
     random_state=42,
-    stratify=y  # mantém proporção 0/1
+    stratify=y 
 )
 
-# 8) Treinar e avaliar
 grid.fit(X_train, y_train)
 best_model = grid.best_estimator_
 y_pred = best_model.predict(X_test)
-y_pred_proba = best_model.predict_proba(X_test)[:, 1]
-threshold = 0.3
-y_pred = (y_pred_proba >= threshold).astype(int)
 
 acc = accuracy_score(y_test, y_pred)
 prec = precision_score(y_test, y_pred, zero_division=0)
 rec = recall_score(y_test, y_pred, zero_division=0)
 f1 = f1_score(y_test, y_pred, zero_division=0)
-roc_auc = roc_auc_score(y_test, y_pred_proba)
+roc_auc = roc_auc_score(y_test, y_pred)
 
 print(f"Best params (roc_auc cv): {grid.best_params_}")
-print(f"Best CV roc_auc:          {grid.best_score_:.4f}")
-print(f"Threshold:                {threshold}")
+
 print(f"Accuracy:                 {acc:.4f}")
 print(f"Precision:                {prec:.4f}")
 print(f"Recall:                   {rec:.4f}")

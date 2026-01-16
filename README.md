@@ -1,31 +1,51 @@
-# Xtra Data Dashboard (frontend)
+﻿# Xtra Data Dashboard (Frontend)
 
-Interface React para explorar datasets e acionar as rotinas de preparo/modelagem do backend Flask.
+Interface web para exploracao de datasets CSV e acionamento de rotinas de preparo e modelagem em uma API Flask.
 
-## Rodando
+## Visao geral
+Este projeto fornece uma UI React para carregar arquivos CSV, inspecionar estatisticas, gerar visualizacoes e executar fluxos de preparo/modelagem com apoio de um backend Flask.
 
-1) Backend: `cd ../backend && python api.py` (http://localhost:5000).  
-2) Frontend: `npm install` (primeira vez) e `npm start` (http://localhost:3000).
+## Funcionalidades
+- Upload de CSV e visualizacao de amostras (head), estatisticas (describe) e info do DataFrame
+- Analise de qualidade de dados com valores nulos customizados e correcoes
+- Visualizacoes: scatter plot, boxplot, histograma e matriz de correlacao
+- Transformacoes como log1p em colunas selecionadas
+- Categorizacao de colunas em bins com comparativo antes/depois
+- Modelagem com KNN e regressao linear multipla com metricas
+- Download de datasets tratados ou reduzidos
 
-## Funcionalidades principais
+## Stack
+- React 19 + Create React App (react-scripts)
+- Fetch API para integracao com a API Flask
 
-- Upload de CSV e navegações: head, describe, info, null-values, correlação, scatter/boxplot/histograma.  
-- Modelos: KNN, regressão linear múltipla e rede neural (MLP) com pré-processamento automatizado.  
-- Categorizar colunas, baixar versões reduzidas/corrigidas do dataset.
+## Requisitos
+- Node.js e npm
+- Backend Flask rodando em http://localhost:5000
 
-## Novo: botão log1p
+## Como rodar (desenvolvimento)
+1) Backend: `cd ../backend` e `python api.py`.
+2) Frontend:
 
-- No menu lateral clique em `log1p`, escolha a coluna e confirme.  
-- Backend executa: zeros conhecidos -> NaN -> mediana -> `np.log1p` -> histograma da coluna transformada (dataset em memória é atualizado).
+```bash
+cd frontend
+npm install
+npm start
+```
 
-## Observações do pré-processamento (MLP)
+A aplicacao abre em http://localhost:3000.
 
-- Colunas biométricas (Glucose, BloodPressure, SkinThickness, Insulin, BMI) têm zeros tratados como faltantes e imputação por mediana.  
-- `Insulin` recebe log1p e depois escalonamento; DPF usa RobustScaler; demais numéricas usam StandardScaler.  
-- Split estratificado, grid com early stopping (`early_stopping=True`, `validation_fraction=0.15`).
+## Scripts
+- `npm start` - modo desenvolvimento
+- `npm test` - runner interativo
+- `npm run build` - bundle de producao
 
-## Scripts úteis
+## Configuracao da API
+A URL base da API esta definida diretamente no frontend em `frontend/src/App.js`. Para trocar host/porta, ajuste os endpoints no codigo.
 
-- `npm start` – ambiente de desenvolvimento.  
-- `npm test` – runner interativo.  
-- `npm run build` – bundle de produção.
+## Estrutura do repositorio
+- `frontend/` - app React
+- `frontend/src/components/` - componentes reutilizaveis
+- `frontend/src/App.js` - fluxo principal da UI
+
+## Licenca
+Nao definida.
