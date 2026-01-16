@@ -21,7 +21,7 @@ y = dados["Outcome"]
 ZERO_AS_MISSING = {"Glucose", "BloodPressure", "SkinThickness", "Insulin", "BMI"}
 LOG1P_COLS = {"Insulin"}
 robust_cols = ["DiabetesPedigreeFunction"]
-standard_cols = ["Pregnancies", "Glucose", "BloodPressure", "SkinThickness", "Insulin", "BMI", "Age"]
+standard_cols = ["Pregnancies", "Glucose", "BloodPressure", "SkinThickness", "Insulin", "BMI"]
 
 def zero_to_nan(X_array, columns):
     """
